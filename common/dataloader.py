@@ -1,15 +1,15 @@
-import os
 import math
+import os
 import random
 
-import torch
-import tqdm
 import numpy as np
 import pandas as pd
+import torch
+import tqdm
 from torch.utils.data import DataLoader, Dataset
 
-from common.configs import config
 from common import videotransforms
+from common.configs import config
 
 
 def get_class_index_map(class_info_path='datasets/thumos_anno/Class Index_Detection.txt'):
@@ -246,7 +246,14 @@ class THUMOS_Dataset(Dataset):
 
     def __getitem__(self, idx):
         sample_info = self.training_list[idx]
-        video_data = self.data_dict[sample_info['video_name']]
+        '''
+        내가 수정한 부분
+        '''
+        video_data = np.load(os.path.join(
+            config['dataset']['training']['video_data_path'], sample_info['video_name'] + '.npy'))
+        video_data = np.transpose(video_data, [3, 0, 1, 2])
+        # video_data = self.data_dict[sample_info['video_name']]
+        ''''''
         offset = sample_info['offset']
         annos = sample_info['annos']
         th = self.th[sample_info['video_name']]
