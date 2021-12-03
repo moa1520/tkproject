@@ -9,7 +9,9 @@ from tqdm import tqdm
 from common.configs import config
 from common.dataloader import (THUMOS_Dataset, get_video_anno, get_video_info,
                                load_video_data)
+from multisegment_loss import MultiSegmentLoss
 from network import PTN
+import torch.nn.functional as F
 
 batch_size = config['training']['batch_size']
 learning_rate = float(config['training']['learning_rate'])
@@ -18,6 +20,7 @@ max_epoch = config['training']['max_epoch']
 num_classes = config['dataset']['num_classes']
 checkpoint_path = config['training']['checkpoint_path']
 random_seed = config['training']['random_seed']
+focal_loss = config['training']['focal_loss']
 
 train_state_path = os.path.join(checkpoint_path, 'training')
 Path(train_state_path).mkdir(exist_ok=True, parents=True)
@@ -60,36 +63,63 @@ def save_model(epoch, model, optimizer):
                os.path.join(train_state_path, 'checkpoint_{}.pth'.format(epoch)))
 
 
-def one_forward(net, clips, targets):
+def calc_bce_loss(start, end, scores):
+    start = torch.tanh(start).mean(-1)
+    end = torch.tanh(end).mean(-1)
+    loss_start = F.binary_cross_entropy(start.view(-1),
+                                        scores[:, 0].contiguous(
+    ).view(-1).cuda(),
+        reduction='mean')
+    loss_end = F.binary_cross_entropy(end.view(-1),
+                                      scores[:, 1].contiguous(
+    ).view(-1).cuda(),
+        reduction='mean')
+    return loss_start, loss_end
+
+
+def one_forward(net, clips, targets, scores=None, training=True):
     clips = clips.cuda()
     targets = [t.cuda() for t in targets]
 
-    output = net(clips)
+    if training:
+        output = net(clips)
+    else:
+        with torch.no_grad():
+            output = net(clips)
 
-    return output
+    loss_l, loss_c = CPD_Loss(
+        [output['loc'], output['conf'], output['center'], output['priors'][0]], targets)
+
+    loss_start, loss_end = calc_bce_loss(
+        output['start'], output['end'], scores)
+
+    return loss_l, loss_c
 
 
 def run_one_epoch(epoch, net, optimizer, data_loader, epoch_step_num, training=True):
+    net.cuda()
     if training:
         net.train()
     else:
         net.eval()
 
+    loss_loc_val = 0
+    loss_conf_val = 0
+    loss_prop_l_val = 0
+    loss_prop_c_val = 0
+    loss_ct_val = 0
+    loss_start_val = 0
+    loss_end_val = 0
+    loss_trip_val = 0
+    loss_contras_val = 0
+    cost_val = 0
+
     with tqdm(data_loader, total=epoch_step_num, ncols=0) as pbar:
         for iter, (clips, targets, scores, ssl_clips, ssl_targets, flags) in enumerate(pbar):
-            net.cuda()
 
-            output = one_forward(net, clips, targets)
-            local, cls = output['local'], output['class']
-            target_start = targets[:, :, 0]
-            target_end = targets[:, :, 1]
-            target_class = targets[:, :, 2]
+            loss_l, loss_c = one_forward(net, clips, targets, scores)
 
-            print(target_start)
-            print(target_end)
-            print(target_class)
-
-            if iter == 3:
+            if iter == 0:
                 break
 
 
@@ -102,6 +132,11 @@ if __name__ == '__main__':
     '''
     net = PTN(num_classes=num_classes,
               in_channels=config['model']['in_channels'], training=True)
+    '''
+    Setup loss
+    '''
+    piou = config['training']['piou']
+    CPD_Loss = MultiSegmentLoss(num_classes, piou, use_focal_loss=focal_loss)
     '''
     Dataloader
     '''

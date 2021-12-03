@@ -5,7 +5,11 @@ import torch.nn.functional as F
 from pytorch_model_summary import summary
 
 from common.configs import config
-from i3d_backbone import InceptionI3d, Unit3D
+from i3d_backbone import InceptionI3d
+
+layer_num = 6
+conv_channels = 512
+feat_t = 256 // 4
 
 
 class _Unit1D(nn.Module):
@@ -120,10 +124,10 @@ class _Unit3D(nn.Module):
 
 
 class I3D_BackBone(nn.Module):
-    def __init__(self, in_channels=3):
+    def __init__(self, in_channels=3, end_point='Mixed_5c'):
         super(I3D_BackBone, self).__init__()
         self._model = InceptionI3d(
-            name='inception_i3d', in_channels=in_channels)
+            final_endpoint=end_point, name='inception_i3d', in_channels=in_channels)
         self._model.build()
 
     def load_pretrained_weight(self, model_path='models/i3d_models/rgb_imagenet.pt'):
@@ -184,6 +188,40 @@ class CoarseNetwork(nn.Module):
         return {'local': localized, 'class': classified}
 
 
+class ProposalBranch(nn.Module):
+    def __init__(self, in_channels, proposal_channels):
+        super(ProposalBranch, self).__init__()
+        self.cur_point_conv = nn.Sequential(
+            _Unit1D(in_channels=in_channels,
+                    output_channels=proposal_channels,
+                    kernel_shape=1,
+                    activation_fn=None),
+            nn.GroupNorm(32, proposal_channels),
+            nn.ReLU(inplace=True)
+        )
+        self.lr_conv = nn.Sequential(
+            _Unit1D(in_channels=in_channels,
+                    output_channels=proposal_channels * 2,
+                    kernel_shape=1,
+                    activation_fn=None),
+            nn.GroupNorm(32, proposal_channels * 2),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, feature, frame_level_feature, segments, frame_segmenets):
+        fm_short = self.cur_point_conv(feature)
+        feature = self.lr_conv(feature)
+
+
+class ScaleExp(nn.Module):
+    def __init__(self, init_value=1.0):
+        super(ScaleExp, self).__init__()
+        self.scale = nn.Parameter(torch.FloatTensor([init_value]))
+
+    def forward(self, x):
+        return torch.exp(x * self.scale)
+
+
 class MLP(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
         super().__init__()
@@ -199,6 +237,226 @@ class MLP(nn.Module):
         return x
 
 
+class FPN(nn.Module):
+    def __init__(self, num_classes, feature_channels, frame_num=256):
+        super(FPN, self).__init__()
+        out_channels = conv_channels
+        self.num_classes = num_classes
+        self.pyramids = nn.ModuleList()
+        self.loc_heads = nn.ModuleList()
+        self.frame_num = frame_num
+        self.layer_num = layer_num
+        for i in range(2):
+            self.pyramids.append(nn.Sequential(
+                _Unit3D(
+                    in_channels=feature_channels[i],
+                    output_channels=out_channels,
+                    kernel_shape=[1, 6 // (i + 1), 6 // (i + 1)],
+                    padding='sptial_valid',
+                    use_batch_norm=False,
+                    use_bias=True,
+                    activation_fn=None
+                ),
+                nn.GroupNorm(32, out_channels),
+                nn.ReLU(inplace=True)
+            ))
+        for i in range(2, layer_num):
+            self.pyramids.append(nn.Sequential(
+                _Unit1D(
+                    in_channels=out_channels,
+                    output_channels=out_channels,
+                    kernel_shape=3,
+                    stride=2,
+                    use_bias=True,
+                    activation_fn=None
+                ),
+                nn.GroupNorm(32, out_channels),
+                nn.ReLU(inplace=True)
+            ))
+
+        loc_block = []
+        for i in range(2):
+            loc_block.append(nn.Sequential(
+                _Unit1D(
+                    in_channels=out_channels,
+                    output_channels=out_channels,
+                    kernel_shape=3,
+                    stride=1,
+                    use_bias=True,
+                    activation_fn=None
+                ),
+                nn.GroupNorm(32, out_channels),
+                nn.ReLU(inplace=True)
+            ))
+        self.loc_block = nn.Sequential(*loc_block)
+
+        conf_block = []
+        for i in range(2):
+            conf_block.append(nn.Sequential(
+                _Unit1D(
+                    in_channels=out_channels,
+                    output_channels=out_channels,
+                    kernel_shape=3,
+                    stride=1,
+                    use_bias=True,
+                    activation_fn=None
+                ),
+                nn.GroupNorm(32, out_channels),
+                nn.ReLU(inplace=True)
+            ))
+        self.conf_block = nn.Sequential(*conf_block)
+
+        self.deconv = nn.Sequential(
+            _Unit1D(out_channels, out_channels, 3, activation_fn=None),
+            nn.GroupNorm(32, out_channels),
+            nn.ReLU(inplace=True),
+            _Unit1D(out_channels, out_channels, 3, activation_fn=None),
+            nn.GroupNorm(32, out_channels),
+            nn.ReLU(inplace=True),
+            _Unit1D(out_channels, out_channels, 1, activation_fn=None),
+            nn.GroupNorm(32, out_channels),
+            nn.ReLU(inplace=True),
+        )
+
+        self.loc_head = _Unit1D(
+            in_channels=out_channels,
+            output_channels=2,
+            kernel_shape=3,
+            stride=1,
+            use_bias=True,
+            activation_fn=None
+        )
+        self.conf_head = _Unit1D(
+            in_channels=out_channels,
+            output_channels=self.num_classes,
+            kernel_shape=3,
+            stride=1,
+            use_bias=True,
+            activation_fn=None
+        )
+        self.center_head = _Unit1D(
+            in_channels=out_channels,
+            output_channels=1,
+            kernel_shape=3,
+            stride=1,
+            use_bias=True,
+            activation_fn=None
+        )
+
+        self.loc_proposal_branch = ProposalBranch(out_channels, 512)
+        self.conf_proposal_branch = ProposalBranch(out_channels, 512)
+
+        self.priors = []
+        t = feat_t
+        for i in range(layer_num):
+            self.loc_heads.append(ScaleExp())
+            self.priors.append(
+                torch.Tensor([[(c + 0.5) / t] for c in range(t)]).view(-1, 1)
+            )
+            t = t // 2
+
+    def forward(self, feat_dict):
+        pyramid_feats = []
+        locs = []
+        confs = []
+        centers = []
+        loc_feats = []
+        conf_feats = []
+
+        x2 = feat_dict['Mixed_5c']
+        x1 = feat_dict['Mixed_4f']
+        batch_num = x1.size(0)
+        for i, conv in enumerate(self.pyramids):
+            if i == 0:
+                x = conv(x1)
+                x = x.squeeze(-1).squeeze(-1)
+            elif i == 1:
+                x = conv(x2)
+                x = x.squeeze(-1).squeeze(-1)
+                x0 = pyramid_feats[-1]
+                y = F.interpolate(x, x0.size()[2:], mode='nearest')
+                pyramid_feats[-1] = x0 + y
+            else:
+                x = conv(x)
+            pyramid_feats.append(x)
+
+        frame_level_feat = pyramid_feats[0].unsqueeze(-1)  # [1, 512, 64, 1]
+        frame_level_feat = F.interpolate(
+            frame_level_feat, [self.frame_num, 1]).squeeze(-1)  # [1,  512, 256]
+        frame_level_feat = self.deconv(frame_level_feat)
+        start_feat = frame_level_feat[:, :256]
+        end_feat = frame_level_feat[:, 256:]
+        start = start_feat.permute(0, 2, 1).contiguous()
+        end = end_feat.permute(0, 2, 1).contiguous()
+
+        for i, feat in enumerate(pyramid_feats):
+            loc_feat = self.loc_block(feat)
+            conf_feat = self.conf_block(feat)
+            loc_feats.append(loc_feat)
+            conf_feats.append(conf_feat)
+
+            locs.append(
+                self.loc_heads[i](self.loc_head(loc_feat))
+                .view(batch_num, 2, -1)
+                .permute(0, 2, 1).contiguous()
+            )
+            confs.append(
+                self.conf_head(conf_feat).view(batch_num, self.num_classes, -1)
+                .permute(0, 2, 1).contiguous()
+            )
+
+            t = feat.size(2)
+            with torch.no_grad():
+                segments = locs[-1] / self.frame_num * t
+                priors = self.priors[i].expand(
+                    batch_num, t, 1).to(feat.device)  # expand == permute
+                new_priors = torch.round(priors * t - 0.5)
+                plen = segments[:, :, :1] + segments[:, :, 1:]
+                in_plen = torch.clamp(plen / 4.0, min=1.0)
+                out_plen = torch.clamp(plen / 10.0, min=1.0)
+
+                l_segment = new_priors - segments[:, :, :1]
+                r_segment = new_priors - segments[:, :, 1:]
+                segments = torch.cat([
+                    torch.round(l_segment - out_plen),
+                    torch.round(l_segment + in_plen),
+                    torch.round(r_segment - in_plen),
+                    torch.round(r_segment + out_plen)
+                ], dim=-1)
+
+                decoded_segments = torch.cat(
+                    [priors[:, :, :1] * self.frame_num - locs[-1][:, :, :1],
+                     priors[:, :, :1] * self.frame_num + locs[-1][:, :, 1:]],
+                    dim=-1)
+                plen = decoded_segments[:, :, 1:] - \
+                    decoded_segments[:, :, :1] + 1.0
+                in_plen = torch.clamp(plen / 4.0, min=1.0)
+                out_plen = torch.clamp(plen / 10.0, min=1.0)
+                frame_segments = torch.cat([
+                    torch.round(decoded_segments[:, :, :1] - out_plen),
+                    torch.round(decoded_segments[:, :, :1] + in_plen),
+                    torch.round(decoded_segments[:, :, 1:] - in_plen),
+                    torch.round(decoded_segments[:, :, 1:] + out_plen)
+                ], dim=-1)
+                centers.append(
+                    self.center_head(loc_feat).view(
+                        batch_num, 1, -1).permute(0, 2, 1).contiguous()
+                )
+
+        loc = torch.cat([o.view(batch_num, -1, 2) for o in locs], 1)
+        conf = torch.cat([o.view(batch_num, -1, self.num_classes)
+                         for o in confs], 1)
+
+        center = torch.cat([o.view(batch_num, -1, 1) for o in centers], 1)
+        priors = torch.cat(self.priors, 0).to(loc.device).unsqueeze(0)
+        loc_feat = torch.cat([o.permute(0, 2, 1) for o in loc_feats], 1)
+        conf_feat = torch.cat([o.permute(0, 2, 1) for o in conf_feats], 1)
+        '''
+        Segment, Framelevel_segment 아직 안썼음
+        '''
+        return loc, conf, center, priors, start, end, loc_feat, conf_feat
+
+
 class PTN(nn.Module):
     def __init__(self, num_classes, in_channels=3, training=True):
         super(PTN, self).__init__()
@@ -206,16 +464,26 @@ class PTN(nn.Module):
         self.backbone = I3D_BackBone(in_channels=in_channels)
         self._training = training
         self.coarseNet = CoarseNetwork(self.num_classes, 1024, 512)
+        self.feature_pyramid_net = FPN(self.num_classes, [832, 1024])
 
         if self._training:
             self.backbone.load_pretrained_weight()
 
     def forward(self, x):
-        x = self.backbone(x)
-        x = x.squeeze(-1).squeeze(-1)
-        coarse_output = self.coarseNet(x)
+        feat = self.backbone(x)
+        loc, conf, center, priors, start, end, loc_feats, conf_feats = self.feature_pyramid_net(
+            feat)
 
-        return coarse_output
+        return {
+            'loc': loc,
+            'conf': conf,
+            'center': center,
+            'priors': priors,
+            'start': start,
+            'end': end,
+            'loc_feats': loc_feats,
+            'conf_feats': conf_feats
+        }
 
 
 if __name__ == '__main__':

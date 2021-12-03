@@ -30,6 +30,7 @@ training:
   max_epoch: 16
   checkpoint_path: ./models/thumos14/
   random_seed: 2023
+  focal_loss: true
 
 testing:
   conf_thresh: 0.01
