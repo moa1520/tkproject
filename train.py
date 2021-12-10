@@ -5,13 +5,17 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, dataloader
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from common.configs import config
 from common.dataloader import THUMOS_Dataset, get_video_anno, get_video_info
 from multisegment_loss import MultiSegmentLoss
 from networks.network import PTN
+
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # Set the GPU 1 to use
+
 
 batch_size = config['training']['batch_size']
 learning_rate = float(config['training']['learning_rate'])
@@ -58,8 +62,8 @@ def set_seed(seed):
 def save_model(epoch, model, optimizer):
     # torch.save(model.module.state_dict(), os.path.join(
     #     checkpoint_path, 'checkpoint_{}.pth'.format(epoch)))
-    # torch.save(model.state_dict(), os.path.join(
-    #     checkpoint_path, 'checkpoint_{}.pth'.format(epoch)))
+    torch.save(model.state_dict(), os.path.join(
+        checkpoint_path, 'checkpoint_{}.pth'.format(epoch)))
     torch.save({'optimizer': optimizer.state_dict(),
                 'state': get_rng_states()},
                os.path.join(train_state_path, 'checkpoint_{}.pth'.format(epoch)))

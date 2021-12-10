@@ -1,21 +1,15 @@
-import math
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from common.configs import config
-from common.misc import (collate_fn, inverse_sigmoid,
-                         nested_tensor_from_tensor_list)
+from common.misc import nested_tensor_from_tensor_list
 from i3d_backbone import InceptionI3d
 from pytorch_model_summary import summary
 
-from networks.config import cfg
 from networks.feature_pyramid import FPN, MLP, CoarseNetwork
 from networks.position_encoding import PositionEmbeddingLearned
 from networks.transformer import Graph_Transformer
-# from networks.ops.roi_align import ROIAlign
-# from networks.transformer import Transformer
 
 
 class I3D_BackBone(nn.Module):
@@ -56,73 +50,11 @@ class PTN(nn.Module):
             normalize_before=True,
             return_intermediate_dec=True)
 
-        # self.transformer = Transformer(
-        #     d_model=hidden_dim,
-        #     nhead=8, num_encoder_layers=2,
-        #     num_decoder_layers=4, dim_feedforward=2048,
-        #     dropout=0.1, activation='relu',
-        #     return_intermediate_dec=True, num_feature_levels=1,
-        #     dec_n_points=4, enc_n_points=4)
-
         self.input_proj = nn.Conv1d(512, hidden_dim, kernel_size=1)
         self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
         self.segments_embed = MLP(hidden_dim, hidden_dim, 2, 3)
 
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
-        # for proj in self.input_proj:
-        #     nn.init.xavier_uniform_(proj[0].weight, gain=1)
-        #     nn.init.constant_(proj[0].bias, 0)
-        # prior_prob = 0.01
-        # bias_value = -math.log((1 - prior_prob) / prior_prob)
-        # self.class_embed.bias.data = torch.ones(num_classes) * bias_value
-        # nn.init.constant_(self.segment_embed.layers[-1].weight.data, 0)
-        # nn.init.constant_(self.segment_embed.layers[-1].bias.data, 0)
-        # if self._training:
-        #     self.backbone.load_pretrained_weight()
-
-        # num_pred = self.transformer.decoder.num_layers  # number of decoder layer
-        # nn.init.constant_(
-        #     self.segment_embed.layers[-1].bias.data[1:], -2.0)
-        # self.class_embed = nn.ModuleList(
-        #     [self.class_embed for _ in range(num_pred)])
-        # self.segment_embed = nn.ModuleList(
-        #     [self.segment_embed for _ in range(num_pred)])
-        # self.transformer.decoder.segment_embed = None
-
-    #     if cfg.ACTIONNESS_REG:
-    #         # RoIAlign params
-    #         self.roi_size = 16
-    #         self.roi_scale = 0
-    #         self.roi_extractor = ROIAlign(self.roi_size, self.roi_scale)
-    #         self.actionness_pred = nn.Sequential(
-    #             nn.Linear(self.roi_size * hidden_dim, hidden_dim),
-    #             nn.ReLU(inplace=True),
-    #             nn.Linear(hidden_dim, hidden_dim),
-    #             nn.ReLU(inplace=True),
-    #             nn.Linear(hidden_dim, 1),
-    #             nn.Sigmoid()
-    #         )
-
-    # def _to_roi_align_format(self, rois, T, scale_factor=1):
-    #     '''Convert RoIs to RoIAlign format.
-    #     Params:
-    #         RoIs: normalized segments coordinates, shape (batch_size, num_segments, 4)
-    #         T: length of the video feature sequence
-    #     '''
-    #     # transform to absolute axis
-    #     B, N = rois.shape[:2]
-    #     rois_center = rois[:, :, 0:1]
-    #     rois_size = rois[:, :, 1:2] * scale_factor
-    #     rois_abs = torch.cat(
-    #         (rois_center - rois_size/2, rois_center + rois_size/2), dim=2) * T
-    #     # expand the RoIs
-    #     rois_abs = torch.clamp(rois_abs, min=0, max=T)  # (N, T, 2)
-    #     # add batch index
-    #     batch_ind = torch.arange(0, B).view((B, 1, 1)).to(rois_abs.device)
-    #     batch_ind = batch_ind.repeat(1, N, 1)
-    #     rois_abs = torch.cat((batch_ind, rois_abs), dim=2)
-    #     # NOTE: stop gradient here to stablize training
-    #     return rois_abs.view((B*N, 3)).detach()
 
     def forward(self, x):
         feat = self.backbone(x)
@@ -145,54 +77,6 @@ class PTN(nn.Module):
 
         out = {'pred_logits': outputs_class[-1],
                'pred_segments': outputs_segments[-1], 'edges': edge}
-
-        # hs, init_reference, inter_reference, memory = self.transformer(
-        #     srcs, masks, pos, query_embeds)
-
-        # outputs_classes = []
-        # outputs_coords = []
-        # # gather outputs from each decoder layers
-        # for lvl in range(hs.shape[0]):
-        #     if lvl == 0:
-        #         reference = init_reference
-        #     else:
-        #         reference = inter_reference[lvl - 1]
-
-        #     reference = inverse_sigmoid(reference)
-        #     outputs_class = self.class_embed[lvl](hs[lvl])
-        #     tmp = self.segment_embed[lvl](hs[lvl])
-        #     # the l-th layer (l >= 2)
-        #     if reference.shape[-1] == 2:
-        #         tmp += reference
-        #     # the last layer
-        #     else:
-        #         assert reference.shape[-1] == 1
-        #         tmp[..., 0] += reference[..., 0]
-        #     outputs_coord = tmp.sigmoid()
-        #     outputs_classes.append(outputs_class)
-        #     outputs_coords.append(outputs_coord)
-        # outputs_class = torch.stack(outputs_classes)
-        # outputs_coord = torch.stack(outputs_coords)
-
-        # if not cfg.ACTIONNESS_REG:
-        #     out = {'pred_logits': outputs_class[-1],
-        #            'pred_segments': outputs_coord[-1]}
-        # else:
-        #     # perform RoIAlign
-        #     B, N = outputs_coord[-1].shape[:2]
-        #     origin_feat = memory
-
-        #     rois = self._to_roi_align_format(
-        #         outputs_coord[-1], origin_feat.shape[2], scale_factor=1.5)
-        #     roi_features = self.roi_extractor(origin_feat, rois)
-        #     roi_features = roi_features.view((B, N, -1))
-        #     pred_actionness = self.actionness_pred(roi_features)
-
-        #     last_layer_cls = outputs_class[-1]
-        #     last_layer_reg = outputs_coord[-1]
-
-        #     out = {'pred_logits': last_layer_cls,
-        #            'pred_segments': last_layer_reg, 'pred_actionness': pred_actionness}
 
         return {
             'loc': loc,

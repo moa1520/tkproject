@@ -9,12 +9,14 @@ def get_config():
     parser.add_argument('--batch_size', type=int)
     parser.add_argument('--ngpu', type=int, default=1)
     parser.add_argument('--learning_rate', type=float)
+    parser.add_argument('--seed', type=int)
     parser.add_argument('--piou', type=float, default=0.5)
     parser.add_argument('--focal_loss', type=bool)
     parser.add_argument('--checkpoint_path', type=str, default='checkpoints')
     parser.add_argument('--hidden_dim', type=int)
     parser.add_argument('--lw', type=float, default=10.0)
     parser.add_argument('--cw', type=float, default=1)
+    parser.add_argument('--resume', type=int, default=0)
 
     args = parser.parse_args()
 
@@ -28,6 +30,9 @@ def get_config():
         data['testing']['checkpoint_path'] = args.checkpoint_path
     data['training']['lw'] = args.lw
     data['training']['cw'] = args.cw
+    data['training']['resume'] = args.resume
+    if args.seed is not None:
+        data['training']['random_seed'] = args.seed
 
     return data
 
