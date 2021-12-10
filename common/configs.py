@@ -11,6 +11,10 @@ def get_config():
     parser.add_argument('--learning_rate', type=float)
     parser.add_argument('--piou', type=float, default=0.5)
     parser.add_argument('--focal_loss', type=bool)
+    parser.add_argument('--checkpoint_path', type=str, default='checkpoints')
+    parser.add_argument('--hidden_dim', type=int)
+    parser.add_argument('--lw', type=float, default=10.0)
+    parser.add_argument('--cw', type=float, default=1)
 
     args = parser.parse_args()
 
@@ -19,6 +23,11 @@ def get_config():
         data = yaml.load(tmp, Loader=yaml.FullLoader)
 
     data['training']['piou'] = args.piou
+    if args.checkpoint_path is not None:
+        data['training']['checkpoint_path'] = args.checkpoint_path
+        data['testing']['checkpoint_path'] = args.checkpoint_path
+    data['training']['lw'] = args.lw
+    data['training']['cw'] = args.cw
 
     return data
 

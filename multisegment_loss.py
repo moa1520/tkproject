@@ -64,7 +64,8 @@ class FocalLoss_Ori(nn.Module):
             logit = logit.transpose(1, 2).contiguous()
             # [N,d1*d2..,C]-> [N*d1*d2..,C]
             logit = logit.view(-1, logit.size(-1))
-        target = target.view(-1, 1).type(torch.int64)  # [N,d1,d2,...]->[N*d1*d2*...,1]
+        # [N,d1,d2,...]->[N*d1*d2*...,1]
+        target = target.view(-1, 1).type(torch.int64)
 
         # -----------legacy way------------
         #  idx = target.cpu().long()
@@ -158,14 +159,18 @@ class MultiSegmentLoss(nn.Module):
         self.center_loss = nn.BCEWithLogitsLoss(reduction='sum')
 
     def forward(self, predictions, targets):
-        loc_data, conf_data, center_data, priors = predictions
+        loc_data, conf_data, center_data, priors, trans_logits, trans_segments, trans_actionness = predictions
         num_batch = loc_data.size(0)
         num_priors = priors.size(0)
         num_classes = self.num_classes
         clip_length = config['dataset']['training']['clip_length']
         # match priors and ground truth segments
         loc_t = torch.Tensor(num_batch, num_priors, 2).to(loc_data.device)
-        conf_t = torch.Tensor(num_batch, num_priors).to(loc_data.device)
+        conf_t = torch.LongTensor(num_batch, num_priors).to(loc_data.device)
+        trans_loc_t = torch.Tensor(
+            num_batch, num_priors, 2).to(loc_data.device)
+        trans_conf_t = torch.LongTensor(
+            num_batch, num_priors).to(loc_data.device)
 
         with torch.no_grad():
             for idx in range(num_batch):
@@ -196,9 +201,21 @@ class MultiSegmentLoss(nn.Module):
                 conf[best_truth_area >= maxn] = 0
                 conf_t[idx] = conf
 
+                # [num_priors]
+                iou = iou_loss(pre_loc, loc_t[idx], loss_type='calc iou')
+                trans_conf = conf.clone()
+                trans_conf[iou < self.overlap_thresh] = 0
+                trans_conf_t[idx] = trans_conf
+                trans_w = pre_loc[:, 0] + pre_loc[:, 1]
+                trans_loc_t[idx][:, 0] = (
+                    loc_t[idx][:, 0] - pre_loc[:, 0]) / (0.5 * trans_w)
+                trans_loc_t[idx][:, 1] = (
+                    loc_t[idx][:, 1] - pre_loc[:, 1]) / (0.5 * trans_w)
+
         pos = conf_t > 0  # [num_batch, num_priors]
         pos_idx = pos.unsqueeze(pos.dim()).expand_as(
             loc_data)  # [num_batch, num_priors, 2]
+        gt_loc_t = loc_t.clone()
         loc_p = loc_data[pos_idx].view(-1, 2)
         loc_target = loc_t[pos_idx].view(-1, 2)
         if loc_p.numel() > 0:
@@ -207,15 +224,52 @@ class MultiSegmentLoss(nn.Module):
         else:
             loss_l = loc_p.sum()
 
+        trans_pos = trans_conf_t > 0
+        # [num_batch, num_priors, 2]
+        trans_pos_idx = trans_pos.unsqueeze(-1).expand_as(trans_segments)
+        trans_loc_p = trans_segments[trans_pos_idx].view(-1, 2)
+        trans_loc_t = trans_loc_t[trans_pos_idx].view(-1, 2)
+
+        if trans_loc_p.numel() > 0:
+            loss_trans_l = F.l1_loss(trans_loc_p, trans_loc_t, reduction='sum')
+        else:
+            loss_trans_l = trans_loc_p.sum()
+
+        trans_pre_loc = loc_data[pos_idx].view(-1, 2)
+        cur_loc_t = gt_loc_t[pos_idx].view(-1, 2)
+        trans_loc_p = trans_segments[pos_idx].view(-1, 2)
+        center_p = center_data[pos.unsqueeze(pos.dim())].view(-1)
+        if trans_pre_loc.numel() > 0:
+            trans_pre_w = (trans_pre_loc[:, 0] +
+                           trans_pre_loc[:, 1]).unsqueeze(-1)
+            cur_loc_p = 0.5 * trans_pre_w * trans_loc_p + trans_pre_loc
+            ious = iou_loss(cur_loc_p, cur_loc_t,
+                            loss_type='calc iou').clamp_(min=0)
+            loss_ct = F.binary_cross_entropy_with_logits(
+                center_p,
+                ious,
+                reduction='sum'
+            )
+        else:
+            loss_ct = trans_pre_loc.sum()
+
         # softmax focal loss
         conf_p = conf_data.view(-1, num_classes)
         targets_conf = conf_t.view(-1, 1)
         conf_p = F.softmax(conf_p, dim=1)
         loss_c = self.focal_loss(conf_p, targets_conf)
 
+        trans_conf_p = trans_logits.view(-1, num_classes)
+        trans_conf_p = F.softmax(trans_conf_p, dim=1)
+        loss_trans_c = self.focal_loss(trans_conf_p, trans_conf_t)
+
         N = max(pos.sum(), 1)
+        PN = max(trans_pos.sum(), 1)
 
         loss_l /= N
         loss_c /= N
+        loss_trans_l /= PN
+        loss_trans_c /= PN
+        loss_ct /= N
 
-        return loss_l, loss_c
+        return loss_l, loss_c, loss_trans_l, loss_trans_c, loss_ct

@@ -31,6 +31,9 @@ training:
   checkpoint_path: ./models/thumos14/
   random_seed: 2023
   focal_loss: true
+  hidden_dim: 256
+  num_queries: 126
+  
 
 testing:
   conf_thresh: 0.01
