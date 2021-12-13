@@ -12,11 +12,16 @@ def get_config():
     parser.add_argument('--seed', type=int)
     parser.add_argument('--piou', type=float, default=0.5)
     parser.add_argument('--focal_loss', type=bool)
-    parser.add_argument('--checkpoint_path', type=str, default='checkpoints')
+    parser.add_argument('--checkpoint_path', type=str)
     parser.add_argument('--hidden_dim', type=int)
     parser.add_argument('--lw', type=float, default=10.0)
     parser.add_argument('--cw', type=float, default=1)
     parser.add_argument('--resume', type=int, default=0)
+
+    parser.add_argument('--nms_thresh', type=float)
+    parser.add_argument('--nms_sigma', type=float)
+    parser.add_argument('--top_k', type=int)
+    parser.add_argument('--output_json', type=str)
 
     args = parser.parse_args()
 
@@ -33,7 +38,14 @@ def get_config():
     data['training']['resume'] = args.resume
     if args.seed is not None:
         data['training']['random_seed'] = args.seed
-
+    if args.nms_thresh is not None:
+        data['testing']['nms_thresh'] = args.nms_thresh
+    if args.nms_sigma is not None:
+        data['testing']['nms_sigma'] = args.nms_sigma
+    if args.top_k is not None:
+        data['testing']['top_k'] = args.top_k
+    if args.output_json is not None:
+        data['testing']['output_json'] = args.output_json
     return data
 
 

@@ -29,6 +29,8 @@ focal_loss = config['training']['focal_loss']
 train_state_path = os.path.join(checkpoint_path, 'training')
 Path(train_state_path).mkdir(exist_ok=True, parents=True)
 
+resume = config['training']['resume']
+
 
 def print_training_info():
     print('batch size: ', batch_size)
@@ -37,6 +39,36 @@ def print_training_info():
     print('max epoch: ', max_epoch)
     print('num classes: ', num_classes)
     print('checkpoint path: ', checkpoint_path)
+
+
+GLOBAL_SEED = 1
+
+
+def worker_init_fn(worker_id):
+    set_seed(GLOBAL_SEED + worker_id)
+
+
+def resume_training(resume, model, optimizer):
+    start_epoch = 1
+    if resume > 0:
+        start_epoch += resume
+        model_path = os.path.join(
+            checkpoint_path, 'checkpoint_{}.ckpt'.format(resume))
+        model.module.load_state_dict(torch.load(model_path))
+        train_path = os.path.join(
+            train_state_path, 'checkpoint_{}.ckpt'.format(resume))
+        state_dict = torch.load(train_path)
+        optimizer.load_state_dict(state_dict['optimizer'])
+        set_rng_state(state_dict['state'])
+    return start_epoch
+
+
+def set_rng_state(states):
+    random.setstate(states[0])
+    np.random.set_state(states[1])
+    torch.set_rng_state(states[2])
+    if torch.cuda.is_available():
+        torch.cuda.set_rng_state(states[3])
 
 
 def get_rng_states():
@@ -215,7 +247,7 @@ if __name__ == '__main__':
                                    train_video_infos,
                                    train_video_annos)
     train_dataloader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, drop_last=True)
+        train_dataset, batch_size=batch_size, shuffle=True, worker_init_fn=worker_init_fn, pin_memory=True, drop_last=True)
     total_iter_num = len(train_dataset) // batch_size
 
     '''
@@ -224,10 +256,10 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(net.parameters(),
                                  lr=learning_rate,
                                  weight_decay=weight_decay)
-    '''
-    Training
-    '''
-    start_epoch = 0
+    """
+    Start training
+    """
+    start_epoch = resume_training(resume, net, optimizer)
 
     for i in range(start_epoch, max_epoch + 1):
         run_one_epoch(i, net=net, optimizer=optimizer, data_loader=train_dataloader,

@@ -27,7 +27,7 @@ class I3D_BackBone(nn.Module):
 
 
 class PTN(nn.Module):
-    def __init__(self, num_classes, num_queries=500, hidden_dim=256, in_channels=3, training=True):
+    def __init__(self, num_classes, num_queries=126, hidden_dim=256, in_channels=3, training=True):
         super(PTN, self).__init__()
         self.num_classes = num_classes
         self.num_queries = num_queries
@@ -58,7 +58,7 @@ class PTN(nn.Module):
 
     def forward(self, x):
         feat = self.backbone(x)
-        loc, conf, center, priors, start, end, loc_feats, conf_feats = self.feature_pyramid_net(
+        loc, conf, center, priors, start, end, loc_feats, conf_feats, segments, frame_segments = self.feature_pyramid_net(
             feat)
 
         with torch.no_grad():

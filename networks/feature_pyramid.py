@@ -113,9 +113,6 @@ class FPN(nn.Module):
             activation_fn=None
         )
 
-        self.loc_proposal_branch = ProposalBranch(out_channels, 512)
-        self.conf_proposal_branch = ProposalBranch(out_channels, 512)
-
         self.priors = []
         t = feat_t
         for i in range(layer_num):
@@ -208,10 +205,9 @@ class FPN(nn.Module):
                     torch.round(decoded_segments[:, :, 1:] - in_plen),
                     torch.round(decoded_segments[:, :, 1:] + out_plen)
                 ], dim=-1)
-                centers.append(
-                    self.center_head(loc_feat).view(
-                        batch_num, 1, -1).permute(0, 2, 1).contiguous()
-                )
+
+            centers.append(self.center_head(loc_feat).view(
+                batch_num, 1, -1).permute(0, 2, 1).contiguous())
 
         loc = torch.cat([o.view(batch_num, -1, 2) for o in locs], 1)
         conf = torch.cat([o.view(batch_num, -1, self.num_classes)
@@ -224,7 +220,7 @@ class FPN(nn.Module):
         '''
         Segment, Framelevel_segment 아직 안썼음
         '''
-        return loc, conf, center, priors, start, end, loc_feat, conf_feat
+        return loc, conf, center, priors, start, end, loc_feat, conf_feat, segments, frame_segments
 
 
 class MLP(nn.Module):
@@ -291,31 +287,6 @@ class CoarseNetwork(nn.Module):
         classified = self.classifier(x)
 
         return {'local': localized, 'class': classified}
-
-
-class ProposalBranch(nn.Module):
-    def __init__(self, in_channels, proposal_channels):
-        super(ProposalBranch, self).__init__()
-        self.cur_point_conv = nn.Sequential(
-            _Unit1D(in_channels=in_channels,
-                    output_channels=proposal_channels,
-                    kernel_shape=1,
-                    activation_fn=None),
-            nn.GroupNorm(32, proposal_channels),
-            nn.ReLU(inplace=True)
-        )
-        self.lr_conv = nn.Sequential(
-            _Unit1D(in_channels=in_channels,
-                    output_channels=proposal_channels * 2,
-                    kernel_shape=1,
-                    activation_fn=None),
-            nn.GroupNorm(32, proposal_channels * 2),
-            nn.ReLU(inplace=True)
-        )
-
-    def forward(self, feature, frame_level_feature, segments, frame_segmenets):
-        fm_short = self.cur_point_conv(feature)
-        feature = self.lr_conv(feature)
 
 
 class _Unit1D(nn.Module):
