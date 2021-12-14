@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import random
 from pathlib import Path
@@ -53,10 +54,10 @@ def resume_training(resume, model, optimizer):
     if resume > 0:
         start_epoch += resume
         model_path = os.path.join(
-            checkpoint_path, 'checkpoint_{}.ckpt'.format(resume))
-        model.module.load_state_dict(torch.load(model_path))
+            checkpoint_path, 'checkpoint_{}.pth'.format(resume))
+        model.load_state_dict(torch.load(model_path))
         train_path = os.path.join(
-            train_state_path, 'checkpoint_{}.ckpt'.format(resume))
+            train_state_path, 'checkpoint_{}.pth'.format(resume))
         state_dict = torch.load(train_path)
         optimizer.load_state_dict(state_dict['optimizer'])
         set_rng_state(state_dict['state'])
@@ -151,7 +152,6 @@ def one_forward(net, clips, targets, scores=None, training=True):
 
 
 def run_one_epoch(epoch, net, optimizer, data_loader, epoch_step_num, training=True):
-    net.cuda()
     if training:
         net.train()
     else:
@@ -212,7 +212,11 @@ def run_one_epoch(epoch, net, optimizer, data_loader, epoch_step_num, training=T
         'trans_loc - {:.5f}, trans_conf - {:.5f}, IoU - {:.5f}, ' \
         'start - {:.5f}, end - {:.5f}'.format(epoch, max_epoch, cost_val, loss_loc_val, loss_conf_val,
                                               loss_trans_l_val, loss_trans_c_val, loss_ct_val, loss_start_val, loss_end_val)
-
+    with open(os.path.join(checkpoint_path, 'training_log.txt'), 'a') as f:
+        f.write('================================\n')
+        f.write(datetime.now() + '\n')
+        f.write(plog + '\n')
+        f.write('================================\n')
     print(plog)
 
 
@@ -225,6 +229,7 @@ if __name__ == '__main__':
     '''
     net = PTN(num_classes=num_classes, num_queries=config['training']['num_queries'], hidden_dim=config['training']['hidden_dim'],
               in_channels=config['model']['in_channels'], training=True)
+    net.cuda()
     '''
     Setup loss
     '''

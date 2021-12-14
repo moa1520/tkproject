@@ -27,11 +27,11 @@ training:
   batch_size: 1
   learning_rate: 1e-5
   weight_decay: 1e-3
-  max_epoch: 16
+  max_epoch: 50
   checkpoint_path: ./models/thumos14/
   random_seed: 2023
   focal_loss: true
-  hidden_dim: 256
+  hidden_dim: 512
   num_queries: 126
   
 

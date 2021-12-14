@@ -2,3 +2,4 @@ datasets/thumos14/*
 .vscode
 networks/transformer(TDA)
 checkpoints/*
+models/thumos14/*

@@ -11,16 +11,36 @@ from networks.feature_pyramid import FPN, MLP, CoarseNetwork
 from networks.position_encoding import PositionEmbeddingLearned
 from networks.transformer import Graph_Transformer
 
+num_classes = config['dataset']['num_classes']
+freeze_bn = config['model']['freeze_bn']
+freeze_bn_affine = config['model']['freeze_bn_affine']
+
 
 class I3D_BackBone(nn.Module):
-    def __init__(self, in_channels=3, end_point='Mixed_5c'):
+    def __init__(self, final_endpoint='Mixed_5c', name='inception_i3d', in_channels=3,
+                 freeze_bn=freeze_bn, freeze_bn_affine=freeze_bn_affine):
         super(I3D_BackBone, self).__init__()
-        self._model = InceptionI3d(
-            final_endpoint=end_point, name='inception_i3d', in_channels=in_channels)
+        self._model = InceptionI3d(final_endpoint=final_endpoint,
+                                   name=name,
+                                   in_channels=in_channels)
         self._model.build()
+        self._freeze_bn = freeze_bn
+        self._freeze_bn_affine = freeze_bn_affine
 
     def load_pretrained_weight(self, model_path='models/i3d_models/rgb_imagenet.pt'):
         self._model.load_state_dict(torch.load(model_path), strict=False)
+
+    def train(self, mode=True):
+        super(I3D_BackBone, self).train(mode)
+        if self._freeze_bn and mode:
+            # print('freeze all BatchNorm3d in I3D backbone.')
+            for name, m in self._model.named_modules():
+                if isinstance(m, nn.BatchNorm3d):
+                    # print('freeze {}.'.format(name))
+                    m.eval()
+                    if self._freeze_bn_affine:
+                        m.weight.requires_grad_(False)
+                        m.bias.requires_grad_(False)
 
     def forward(self, x):
         return self._model.extract_features(x)
@@ -39,8 +59,8 @@ class PTN(nn.Module):
             num_pos_dict=512, num_pos_feats=hidden_dim)
 
         self.transformer = Graph_Transformer(
-            nqueries=config['training']['num_queries'],
-            d_model=config['training']['hidden_dim'],
+            nqueries=num_queries,
+            d_model=hidden_dim,
             nhead=8,
             num_encoder_layers=2,
             num_decoder_layers=4,
@@ -51,7 +71,7 @@ class PTN(nn.Module):
             return_intermediate_dec=True)
 
         self.input_proj = nn.Conv1d(512, hidden_dim, kernel_size=1)
-        self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
+        self.class_embed = nn.Linear(hidden_dim, num_classes)
         self.segments_embed = MLP(hidden_dim, hidden_dim, 2, 3)
 
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
