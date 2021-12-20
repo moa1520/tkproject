@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
     npy_data_path = config['dataset']['testing']['video_data_path']
 
-    net = PTN(num_classes, training=False)
+    net = PTN(num_classes, hidden_dim=512, training=False)
     net.load_state_dict(torch.load(checkpoint_path))
     net.eval().cuda()
 
@@ -104,8 +104,7 @@ if __name__ == '__main__':
             prop_conf = score_func(prop_conf)
             center = center.sigmoid()
 
-            conf = (conf + prop_conf[:, :-1]) / 2.0
-            # conf = (conf + prop_conf) / 2.0
+            conf = (conf + prop_conf) / 2.0
             conf = conf * center
             conf = conf.view(-1, num_classes).transpose(1, 0)
             conf_scores = conf.clone()

@@ -1,6 +1,6 @@
-from datetime import datetime
 import os
 import random
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -117,19 +117,6 @@ def calc_bce_loss(start, end, scores):
 
 
 def one_forward(net, clips, targets, scores=None, training=True):
-    '''
-    return {
-            'loc': loc,
-            'conf': conf,
-            'center': center,
-            'priors': priors,
-            'start': start,
-            'end': end,
-            'loc_feats': loc_feats,
-            'conf_feats': conf_feats,
-            'out': out
-            }
-    '''
     clips = clips.cuda()
     targets = [t.cuda() for t in targets]
 
@@ -214,7 +201,7 @@ def run_one_epoch(epoch, net, optimizer, data_loader, epoch_step_num, training=T
                                               loss_trans_l_val, loss_trans_c_val, loss_ct_val, loss_start_val, loss_end_val)
     with open(os.path.join(checkpoint_path, 'training_log.txt'), 'a') as f:
         f.write('================================\n')
-        f.write(datetime.now() + '\n')
+        f.write(str(datetime.now()) + '\n')
         f.write(plog + '\n')
         f.write('================================\n')
     print(plog)

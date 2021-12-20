@@ -27,7 +27,7 @@ class I3D_BackBone(nn.Module):
         self._freeze_bn = freeze_bn
         self._freeze_bn_affine = freeze_bn_affine
 
-    def load_pretrained_weight(self, model_path='models/i3d_models/rgb_imagenet.pt'):
+    def load_pretrained_weight(self, model_path=config['model']['backbone_model']):
         self._model.load_state_dict(torch.load(model_path), strict=False)
 
     def train(self, mode=True):
@@ -61,12 +61,12 @@ class PTN(nn.Module):
         self.transformer = Graph_Transformer(
             nqueries=num_queries,
             d_model=hidden_dim,
-            nhead=8,
+            nhead=4,
             num_encoder_layers=2,
-            num_decoder_layers=4,
-            dim_feedforward=2048,
-            dropout=0.1,
-            activation='relu',
+            num_decoder_layers=1,
+            dim_feedforward=1024,
+            dropout=0,
+            activation='leaky_relu',
             normalize_before=True,
             return_intermediate_dec=True)
 
@@ -75,28 +75,32 @@ class PTN(nn.Module):
         self.segments_embed = MLP(hidden_dim, hidden_dim, 2, 3)
 
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
+        if self._training:
+            self.backbone.load_pretrained_weight()
 
     def forward(self, x):
         feat = self.backbone(x)
-        loc, conf, center, priors, start, end, loc_feats, conf_feats, segments, frame_segments = self.feature_pyramid_net(
+        loc, conf, center, priors, start, end, loc_feat, conf_feat, frame_level_feat, segments, frame_segments = self.feature_pyramid_net(
             feat)
 
         with torch.no_grad():
-            loc_feats_ = nested_tensor_from_tensor_list(
-                loc_feats.permute(0, 2, 1))  # (n, t, c) -> (n, c, t)
+            frame_level_feat_ = nested_tensor_from_tensor_list(frame_level_feat)  # (n, t, c) -> (n, c, t)
 
-        pos = self.poisition_embedding(loc_feats_.tensors, loc_feats_.mask)
-        src, mask = loc_feats_.tensors, loc_feats_.mask
+        pos = self.poisition_embedding(
+            frame_level_feat_.tensors, frame_level_feat_.mask)
+        src, mask = frame_level_feat_.tensors, frame_level_feat_.mask
         src = self.input_proj(src)
 
         query_embeds = self.query_embed.weight
         hs, _, edge = self.transformer(src, (mask == 1), query_embeds, pos)
 
+        hs = hs.squeeze(0)
+
         outputs_class = self.class_embed(hs)
         outputs_segments = F.relu(self.segments_embed(hs))
 
-        out = {'pred_logits': outputs_class[-1],
-               'pred_segments': outputs_segments[-1], 'edges': edge}
+        out = {'pred_logits': outputs_class,
+               'pred_segments': outputs_segments, 'edges': edge}
 
         return {
             'loc': loc,
@@ -105,8 +109,9 @@ class PTN(nn.Module):
             'priors': priors,
             'start': start,
             'end': end,
-            'loc_feats': loc_feats,
-            'conf_feats': conf_feats,
+            'loc_feat': loc_feat,
+            'conf_feat': conf_feat,
+            'frame_level_feats': frame_level_feat,
             'out': out
         }
 

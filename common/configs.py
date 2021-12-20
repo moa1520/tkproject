@@ -7,16 +7,18 @@ def get_config():
     parser.add_argument('config_file', type=str,
                         default='configs/thumos14.yaml', nargs='?')
     parser.add_argument('--batch_size', type=int)
-    parser.add_argument('--ngpu', type=int, default=1)
     parser.add_argument('--learning_rate', type=float)
-    parser.add_argument('--seed', type=int)
-    parser.add_argument('--piou', type=float, default=0.5)
-    parser.add_argument('--focal_loss', type=bool)
+    parser.add_argument('--weight_decay', type=float)
+    parser.add_argument('--max_epoch', type=int)
     parser.add_argument('--checkpoint_path', type=str)
+    parser.add_argument('--seed', type=int)
+    parser.add_argument('--focal_loss', type=bool)
+    parser.add_argument('--ngpu', type=int, default=1)
+    parser.add_argument('--piou', type=float, default=0.5)
     parser.add_argument('--hidden_dim', type=int)
     parser.add_argument('--lw', type=float, default=10.0)
     parser.add_argument('--cw', type=float, default=1)
-    parser.add_argument('--resume', type=int, default=2)
+    parser.add_argument('--resume', type=int, default=0)
 
     parser.add_argument('--nms_thresh', type=float)
     parser.add_argument('--nms_sigma', type=float)
@@ -29,6 +31,17 @@ def get_config():
         tmp = f.read()
         data = yaml.load(tmp, Loader=yaml.FullLoader)
 
+    if args.batch_size is not None:
+        data['training']['batch_size'] = int(args.batch_size)
+    if args.learning_rate is not None:
+        data['training']['learning_rate'] = float(args.learning_rate)
+    if args.weight_decay is not None:
+        data['training']['weight_decay'] = float(args.weight_decay)
+    if args.max_epoch is not None:
+        data['training']['max_epoch'] = int(args.max_epoch)
+    if args.checkpoint_path is not None:
+        data['training']['checkpoint_path'] = args.checkpoint_path
+        data['testing']['checkpoint_path'] = args.checkpoint_path
     data['training']['piou'] = args.piou
     if args.checkpoint_path is not None:
         data['training']['checkpoint_path'] = args.checkpoint_path
