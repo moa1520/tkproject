@@ -7,7 +7,7 @@ from common.misc import nested_tensor_from_tensor_list
 from i3d_backbone import InceptionI3d
 from pytorch_model_summary import summary
 
-from networks.feature_pyramid import FPN, MLP, CoarseNetwork
+from networks.feature_pyramid import FPN, MLP, _Unit1D, CoarseNetwork
 from networks.position_encoding import PositionEmbeddingLearned
 from networks.transformer import Graph_Transformer
 
@@ -46,6 +46,71 @@ class I3D_BackBone(nn.Module):
         return self._model.extract_features(x)
 
 
+class Mixup_Branch(nn.Module):
+    def __init__(self, in_channels, proposal_channels):
+        super(Mixup_Branch, self).__init__()
+        self.cur_point_conv = nn.Sequential(
+            _Unit1D(in_channels=in_channels,
+                    output_channels=proposal_channels,
+                    kernel_shape=1,
+                    activation_fn=None),
+            nn.GroupNorm(32, proposal_channels),
+            nn.ReLU(inplace=True)
+        )
+        self.lr_conv = nn.Sequential(
+            _Unit1D(in_channels=in_channels,
+                    output_channels=proposal_channels * 2,
+                    kernel_shape=1,
+                    activation_fn=None),
+            nn.GroupNorm(32, proposal_channels * 2),
+            nn.ReLU(inplace=True)
+        )
+        self.proposal_conv = nn.Sequential(
+            _Unit1D(in_channels=proposal_channels * 4,
+                    output_channels=in_channels,
+                    kernel_shape=1,
+                    activation_fn=None),
+            nn.GroupNorm(32, in_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, feature, frame_level_feature):
+        '''
+        feature: (1, 512, t); t = 126
+        frame_level_feature: (1, 512, 256)
+        '''
+        fm_short = self.cur_point_conv(feature)
+        feature = self.lr_conv(feature)
+
+        '''
+        inverse_cdf
+        '''
+        t = feature.size(2)
+        max_values = torch.max(frame_level_feature, dim=1)[0]
+        sum_value = torch.sum(max_values)
+        max_values /= sum_value
+        cdf_values = torch.cumsum(max_values, dim=1)[0]  # 256
+        cdf_values = (cdf_values * t).int()
+        cur_idx = 0
+        for i in range(t):
+            while len(torch.where(cdf_values == cur_idx)[0]) == 0:
+                cur_idx += 1
+            idx = torch.where(cdf_values == cur_idx)[0][0]
+
+            if i == 0:
+                sampled_feature = frame_level_feature[:, :, idx].unsqueeze(-1)
+            else:
+                sampled_feature = torch.cat(
+                    [sampled_feature, frame_level_feature[:, :, idx].unsqueeze(-1)], dim=-1)
+        assert sampled_feature.size(2) == t
+
+        mixed_feature = torch.cat(
+            [sampled_feature, feature, fm_short], dim=1)
+        mixed_feature = self.proposal_conv(mixed_feature)
+
+        return mixed_feature
+
+
 class PTN(nn.Module):
     def __init__(self, num_classes, num_queries=126, hidden_dim=256, in_channels=3, training=True):
         super(PTN, self).__init__()
@@ -69,35 +134,55 @@ class PTN(nn.Module):
             activation='leaky_relu',
             normalize_before=True,
             return_intermediate_dec=True)
+        self.loc_mixup_branch = Mixup_Branch(512, 512)
+        self.conf_mixup_branch = Mixup_Branch(512, 512)
 
         self.input_proj = nn.Conv1d(512, hidden_dim, kernel_size=1)
         self.class_embed = nn.Linear(hidden_dim, num_classes)
         self.segments_embed = MLP(hidden_dim, hidden_dim, 2, 3)
 
-        self.query_embed = nn.Embedding(num_queries, hidden_dim)
+        self.loc_query_embed = nn.Embedding(num_queries, hidden_dim)
+        self.conf_query_embed = nn.Embedding(num_queries, hidden_dim)
         if self._training:
             self.backbone.load_pretrained_weight()
 
     def forward(self, x):
         feat = self.backbone(x)
-        loc, conf, center, priors, start, end, loc_feat, conf_feat, frame_level_feat, segments, frame_segments = self.feature_pyramid_net(
+        loc, conf, center, priors, start, end, loc_feat, conf_feat, frame_level_feat = self.feature_pyramid_net(
             feat)
+        # loc_feat, conf_feat -> B x T x C
+        loc_transformer_input = self.loc_mixup_branch(
+            loc_feat.permute(0, 2, 1), frame_level_feat)
+        conf_transformer_input = self.conf_mixup_branch(
+            conf_feat.permute(0, 2, 1), frame_level_feat)
 
         with torch.no_grad():
-            frame_level_feat_ = nested_tensor_from_tensor_list(frame_level_feat)  # (n, t, c) -> (n, c, t)
+            loc_transformer_input_ = nested_tensor_from_tensor_list(
+                loc_transformer_input)  # (n, t, c) -> (n, c, t)
+            conf_transformer_input_ = nested_tensor_from_tensor_list(
+                conf_transformer_input)
 
         pos = self.poisition_embedding(
-            frame_level_feat_.tensors, frame_level_feat_.mask)
-        src, mask = frame_level_feat_.tensors, frame_level_feat_.mask
+            loc_transformer_input_.tensors, loc_transformer_input_.mask)
+        src, mask = loc_transformer_input_.tensors, loc_transformer_input_.mask
         src = self.input_proj(src)
 
-        query_embeds = self.query_embed.weight
+        query_embeds = self.loc_query_embed.weight
         hs, _, edge = self.transformer(src, (mask == 1), query_embeds, pos)
 
         hs = hs.squeeze(0)
-
-        outputs_class = self.class_embed(hs)
         outputs_segments = F.relu(self.segments_embed(hs))
+
+        pos = self.poisition_embedding(
+            conf_transformer_input_.tensors, conf_transformer_input_.mask)
+        src, mask = conf_transformer_input_.tensors, conf_transformer_input_.mask
+        src = self.input_proj(src)
+
+        query_embeds = self.conf_query_embed.weight
+        hs, _, edge = self.transformer(src, (mask == 1), query_embeds, pos)
+
+        hs = hs.squeeze(0)
+        outputs_class = self.class_embed(hs)
 
         out = {'pred_logits': outputs_class,
                'pred_segments': outputs_segments, 'edges': edge}
@@ -109,8 +194,6 @@ class PTN(nn.Module):
             'priors': priors,
             'start': start,
             'end': end,
-            'loc_feat': loc_feat,
-            'conf_feat': conf_feat,
             'frame_level_feats': frame_level_feat,
             'out': out
         }

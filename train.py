@@ -156,7 +156,7 @@ def run_one_epoch(epoch, net, optimizer, data_loader, epoch_step_num, training=T
     cost_val = 0
 
     with tqdm(data_loader, total=epoch_step_num, ncols=0) as pbar:
-        for n_iter, (clips, targets, scores, ssl_clips, ssl_targets, flags) in enumerate(pbar):
+        for n_iter, (clips, targets, scores) in enumerate(pbar):
 
             loss_l, loss_c, loss_trans_l, loss_trans_c, loss_start, loss_end, loss_ct = one_forward(
                 net, clips, targets, scores)

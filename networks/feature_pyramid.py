@@ -172,40 +172,6 @@ class FPN(nn.Module):
                 .permute(0, 2, 1).contiguous()
             )
 
-            t = feat.size(2)
-            with torch.no_grad():
-                segments = locs[-1] / self.frame_num * t
-                priors = self.priors[i].expand(
-                    batch_num, t, 1).to(feat.device)  # expand == permute
-                new_priors = torch.round(priors * t - 0.5)
-                plen = segments[:, :, :1] + segments[:, :, 1:]
-                in_plen = torch.clamp(plen / 4.0, min=1.0)
-                out_plen = torch.clamp(plen / 10.0, min=1.0)
-
-                l_segment = new_priors - segments[:, :, :1]
-                r_segment = new_priors - segments[:, :, 1:]
-                segments = torch.cat([
-                    torch.round(l_segment - out_plen),
-                    torch.round(l_segment + in_plen),
-                    torch.round(r_segment - in_plen),
-                    torch.round(r_segment + out_plen)
-                ], dim=-1)
-
-                decoded_segments = torch.cat(
-                    [priors[:, :, :1] * self.frame_num - locs[-1][:, :, :1],
-                     priors[:, :, :1] * self.frame_num + locs[-1][:, :, 1:]],
-                    dim=-1)
-                plen = decoded_segments[:, :, 1:] - \
-                    decoded_segments[:, :, :1] + 1.0
-                in_plen = torch.clamp(plen / 4.0, min=1.0)
-                out_plen = torch.clamp(plen / 10.0, min=1.0)
-                frame_segments = torch.cat([
-                    torch.round(decoded_segments[:, :, :1] - out_plen),
-                    torch.round(decoded_segments[:, :, :1] + in_plen),
-                    torch.round(decoded_segments[:, :, 1:] - in_plen),
-                    torch.round(decoded_segments[:, :, 1:] + out_plen)
-                ], dim=-1)
-
             centers.append(self.center_head(loc_feat).view(
                 batch_num, 1, -1).permute(0, 2, 1).contiguous())
 
@@ -217,10 +183,7 @@ class FPN(nn.Module):
         priors = torch.cat(self.priors, 0).to(loc.device).unsqueeze(0)
         loc_feat = torch.cat([o.permute(0, 2, 1) for o in loc_feats], 1)
         conf_feat = torch.cat([o.permute(0, 2, 1) for o in conf_feats], 1)
-        '''
-        Segment, Framelevel_segment 아직 안썼음
-        '''
-        return loc, conf, center, priors, start, end, loc_feat, conf_feat, frame_level_feat, segments, frame_segments
+        return loc, conf, center, priors, start, end, loc_feat, conf_feat, frame_level_feat
 
 
 class MLP(nn.Module):

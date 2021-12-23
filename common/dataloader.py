@@ -256,7 +256,6 @@ class THUMOS_Dataset(Dataset):
         ''''''
         offset = sample_info['offset']
         annos = sample_info['annos']
-        th = self.th[sample_info['video_name']]
 
         input_data = video_data[:, offset: offset + self.clip_length]
         c, t, h, w = input_data.shape
@@ -276,11 +275,8 @@ class THUMOS_Dataset(Dataset):
         input_data = torch.from_numpy(input_data).float()
         if self.rgb_norm:
             input_data = (input_data / 255.0) * 2.0 - 1.0
-        ssl_input_data, ssl_annos, flag = self.augment(
-            input_data, annos, th, 1)
         annos = annos_transform(annos, self.clip_length)
         target = np.stack(annos, 0)
-        ssl_target = np.stack(ssl_annos, 0)
 
         scores = np.stack([
             sample_info['start'],
@@ -288,7 +284,7 @@ class THUMOS_Dataset(Dataset):
         ], axis=0)
         scores = torch.from_numpy(scores.copy()).float()
 
-        return input_data, target, scores, ssl_input_data, ssl_target, flag
+        return input_data, target, scores
 
 
 def detection_collate(batch):
