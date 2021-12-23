@@ -159,7 +159,7 @@ class MultiSegmentLoss(nn.Module):
         self.center_loss = nn.BCEWithLogitsLoss(reduction='sum')
 
     def forward(self, predictions, targets):
-        loc_data, conf_data, center_data, priors, trans_logits, trans_segments, trans_actionness = predictions
+        loc_data, conf_data, center_data, priors, trans_segments, trans_logits = predictions
         num_batch = loc_data.size(0)
         num_priors = priors.size(0)
         num_classes = self.num_classes

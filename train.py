@@ -126,11 +126,9 @@ def one_forward(net, clips, targets, scores=None, training=True):
         with torch.no_grad():
             output = net(clips)
 
-    out = output['out']
-
     loss_l, loss_c, loss_trans_l, loss_trans_c, loss_ct = CPD_Loss(
         [output['loc'], output['conf'], output['center'], output['priors'][0],
-         out['pred_logits'], out['pred_segments'], out['edges']], targets)
+         output['refined_loc'], output['refined_cls']], targets)
 
     loss_start, loss_end = calc_bce_loss(
         output['start'], output['end'], scores)

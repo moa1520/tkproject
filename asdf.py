@@ -3,56 +3,53 @@
 # import numpy as np
 import torch
 # import torch.nn as nn
-# from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader
 
-from common import videotransforms
-# from common.configs import config
-# from common.dataloader_flow_fusion import (THUMOS_Dataset, get_video_anno,
-#                                            get_video_info)
+# from common import videotransforms
+from common.configs import config
+from common.dataloader import THUMOS_Dataset, get_video_anno, get_video_info
 from networks.network import PTN
-# from multisegment_loss_flow_fusion import MultiSegmentLoss
+from multisegment_loss import MultiSegmentLoss
 
 
-# def main():
-#     model = PTN(21, num_queries=126, hidden_dim=256)
-#     model.eval()
-#     model.cuda()
+def main():
+    model = PTN(21, num_queries=126, hidden_dim=512, training=False)
+    model.eval()
 
-#     train_video_infos = get_video_info(
-#         config['dataset']['training']['video_info_path'])
-#     train_video_annos = get_video_anno(
-#         train_video_infos, config['dataset']['training']['video_anno_path'])
-#     train_dataset = THUMOS_Dataset(None,
-#                                    train_video_infos,
-#                                    train_video_annos)
-#     train_dataloader = DataLoader(
-#         train_dataset, batch_size=1, shuffle=True, pin_memory=True, drop_last=True)
+    train_video_infos = get_video_info(
+        config['dataset']['training']['video_info_path'])
+    train_video_annos = get_video_anno(
+        train_video_infos, config['dataset']['training']['video_anno_path'])
+    train_dataset = THUMOS_Dataset(None,
+                                   train_video_infos,
+                                   train_video_annos)
+    train_dataloader = DataLoader(
+        train_dataset, batch_size=1, shuffle=True, pin_memory=True, drop_last=True)
 
-#     MSLoss = MultiSegmentLoss(
-#         21, config['training']['piou'], use_focal_loss=config['training']['focal_loss'])
+    MSLoss = MultiSegmentLoss(
+        21, config['training']['piou'], use_focal_loss=config['training']['focal_loss'])
 
-#     for n_iter, (clips, flow_clips, targets, scores) in enumerate(train_dataloader):
-#         clips, flow_clips, targets = clips.cuda(), flow_clips.cuda(), targets.cuda()
-#         print(clips.shape)
-#         print(flow_clips.shape)
-#         print(targets.shape)
+    for n_iter, (clips, targets, scores) in enumerate(train_dataloader):
+        clips, targets = clips, targets
+        print(clips.shape)
+        print(targets.shape)
 
-#         out = model(clips, flow_clips)
+        output = model(clips)
 
-#         print(out['coarse_logits'].shape, out['coarse_segments'].shape,
-#               out['refine_logits'].shape, out['refine_segments'].shape)
+        print(output['loc'].shape, output['conf'].shape,
+              output['refined_loc'].shape, output['refined_cls'].shape)
 
-#         MSLoss([out['coarse_segments'], out['coarse_logits'],
-#                out['refine_segments'][0], out['refine_logits'][0]], targets)
+        MSLoss([output['loc'], output['conf'], output['center'], output['priors']
+               [0], output['refined_loc'], output['refined_cls']], targets)
 
-#         if n_iter == 2:
-#             break
+        if n_iter == 2:
+            break
 
 
 if __name__ == '__main__':
-    # main()
+    main()
 
-    cetner_crop = videotransforms.CenterCrop(size=96)
+    # cetner_crop = videotransforms.CenterCrop(size=96)
 
     # rgb = np.load('datasets/thumos14/test_npy/video_test_0000051.npy')
     # flow = np.load('datasets/thumos14/test_flow_npy/video_test_0000051.npy')
@@ -68,10 +65,10 @@ if __name__ == '__main__':
     # flow = (flow / 255.0) * 2.0 - 1.0
 
     # print(flow.shape)
-    rgb = torch.Tensor(1, 3, 256, 96, 96).cuda()
-    print(rgb.shape)
+    # rgb = torch.Tensor(1, 3, 256, 96, 96).cuda()
+    # print(rgb.shape)
 
-    net = PTN(num_classes=21, num_queries=126, hidden_dim=256).cuda()
+    # net = PTN(num_classes=21, num_queries=126, hidden_dim=256).cuda()
 
-    out = net(rgb)
-    print(out.shape)
+    # out = net(rgb)
+    # print(out.shape)

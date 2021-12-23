@@ -83,8 +83,7 @@ if __name__ == '__main__':
                 output_dict = net(clip)
 
             loc, conf, priors = output_dict['loc'], output_dict['conf'], output_dict['priors'][0]
-            out = output_dict['out']
-            prop_loc, prop_conf = out['pred_segments'], out['pred_logits']
+            prop_loc, prop_conf = output_dict['refined_loc'], output_dict['refined_cls']
             center = output_dict['center']
 
             loc = loc[0]

@@ -184,18 +184,16 @@ class PTN(nn.Module):
         hs = hs.squeeze(0)
         outputs_class = self.class_embed(hs)
 
-        out = {'pred_logits': outputs_class,
-               'pred_segments': outputs_segments, 'edges': edge}
-
         return {
             'loc': loc,
             'conf': conf,
+            'refined_loc': outputs_segments,
+            'refined_cls': outputs_class,
             'center': center,
             'priors': priors,
             'start': start,
             'end': end,
-            'frame_level_feats': frame_level_feat,
-            'out': out
+            'frame_level_feats': frame_level_feat
         }
 
 
