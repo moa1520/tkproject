@@ -26,6 +26,7 @@ softmax_func = True
 if not os.path.exists(output_path):
     os.makedirs(output_path)
 
+fusion = False
 
 if __name__ == '__main__':
     video_infos = get_video_info(
@@ -33,10 +34,23 @@ if __name__ == '__main__':
     originidx_to_idx, idx_to_class = get_class_index_map()
 
     npy_data_path = config['dataset']['testing']['video_data_path']
+    flow_data_path = config['dataset']['testing']['flow_data_path']
 
-    net = PTN(num_classes, hidden_dim=512, training=False)
-    net.load_state_dict(torch.load(checkpoint_path))
-    net.eval().cuda()
+    if fusion:
+        rgb_net = PTN(num_classes, hidden_dim=512,
+                      in_channels=3, training=False)
+        flow_net = PTN(num_classes, hidden_dim=512,
+                       in_channels=2, training=False)
+        rgb_net.load_state_dict(torch.load(checkpoint_path))
+        flow_net.load_state_dict(torch.load(
+            'models/thumos14_flow/checkpoint_15.pth'))
+        rgb_net.eval().cuda()
+        flow_net.eval().cuda()
+        net = rgb_net
+    else:
+        net = PTN(num_classes, hidden_dim=512, in_channels=3, training=False)
+        net.load_state_dict(torch.load(checkpoint_path))
+        net.eval().cuda()
 
     if softmax_func:
         score_func = nn.Softmax(dim=-1)
@@ -62,6 +76,13 @@ if __name__ == '__main__':
         data = centor_crop(data)  # (3, sample_count, 96, 96)
         data = torch.from_numpy(data)
 
+        if fusion:
+            flow_data = np.load(os.path.join(
+                flow_data_path, video_name + '.npy'))
+            flow_data = np.transpose(flow_data, [3, 0, 1, 2])
+            flow_data = centor_crop(flow_data)
+            flow_data = torch.from_numpy(flow_data)
+
         output = []
         for cl in range(num_classes):
             output.append([])
@@ -72,25 +93,60 @@ if __name__ == '__main__':
             clip = data[:, offset: offset + clip_length]
             clip = clip.float()
             clip = (clip / 255.0) * 2.0 - 1.0  # [-1, 1]로 변환
+            if fusion:
+                flow_clip = flow_data[:, offset: offset + clip_length]
+                flow_clip = flow_clip.float()
+                flow_clip = (flow_clip * 255.0) * 2.0 - 1.0
 
             if clip.size(1) < clip_length:
                 tmp = torch.zeros([clip.size(0), clip_length - clip.size(1),
                                    96, 96]).float()
                 clip = torch.cat([clip, tmp], dim=1)
             clip = clip.unsqueeze(0).cuda()  # (1, 3, 256, 96, 96)
+            if fusion:
+                if flow_clip.size(1) < clip_length:
+                    tmp = torch.zeros(
+                        [flow_clip.size(0), clip_length - flow_clip.size(1), 96, 96]).float()
+                    flow_clip = torch.cat([flow_clip, tmp], dim=1)
+                flow_clip = flow_clip.unsqueeze(0).cuda()
 
             with torch.no_grad():
                 output_dict = net(clip)
+                if fusion:
+                    flow_output_dict = flow_net(flow_clip)
 
             loc, conf, priors = output_dict['loc'], output_dict['conf'], output_dict['priors'][0]
             prop_loc, prop_conf = output_dict['refined_loc'], output_dict['refined_cls']
             center = output_dict['center']
 
-            loc = loc[0]
-            conf = conf[0]
-            prop_loc = prop_loc[0]
-            prop_conf = prop_conf[0]
-            center = center[0]
+            if fusion:
+                rgb_conf = conf[0]
+                rgb_loc = loc[0]
+                rgb_prop_loc = prop_loc[0]
+                rgb_prop_conf = prop_conf[0]
+                rgb_center = center[0]
+
+                loc, conf, priors = flow_output_dict['loc'], flow_output_dict['conf'], flow_output_dict['priors'][0]
+                prop_loc, prop_conf = flow_output_dict['refined_loc'], flow_output_dict['refined_cls']
+                center = flow_output_dict['center']
+
+                flow_conf = conf[0]
+                flow_loc = loc[0]
+                flow_prop_loc = prop_loc[0]
+                flow_prop_conf = prop_conf[0]
+                flow_center = center[0]
+
+                loc = (rgb_loc + flow_loc) / 2.0
+                prop_loc = (rgb_prop_loc + flow_prop_loc) / 2.0
+                conf = (rgb_conf + flow_conf) / 2.0
+                prop_conf = (rgb_prop_conf + flow_prop_conf) / 2.0
+                center = (rgb_center + flow_center) / 2.0
+            else:
+                loc = loc[0]
+                conf = conf[0]
+                prop_loc = prop_loc[0]
+                prop_conf = prop_conf[0]
+                center = center[0]
 
             pre_loc_w = loc[:, :1] + loc[:, 1:]
             loc = 0.5 * pre_loc_w * prop_loc + loc

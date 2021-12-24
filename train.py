@@ -38,8 +38,11 @@ def print_training_info():
     print('learning rate: ', learning_rate)
     print('weight decay: ', weight_decay)
     print('max epoch: ', max_epoch)
-    print('num classes: ', num_classes)
     print('checkpoint path: ', checkpoint_path)
+    print('loc weight: ', config['training']['lw'])
+    print('cls weight: ', config['training']['cw'])
+    print('piou:', config['training']['piou'])
+    print('resume: ', resume)
 
 
 GLOBAL_SEED = 1
@@ -132,6 +135,16 @@ def one_forward(net, clips, targets, scores=None, training=True):
 
     loss_start, loss_end = calc_bce_loss(
         output['start'], output['end'], scores)
+    scores_ = F.interpolate(scores, config['training']['num_queries'])
+    loss_start_loc_prop, loss_end_loc_prop = calc_bce_loss(output['start_loc_prop'],
+                                                           output['end_loc_prop'],
+                                                           scores_)
+    loss_start_conf_prop, loss_end_conf_prop = calc_bce_loss(output['start_conf_prop'],
+                                                             output['end_conf_prop'],
+                                                             scores_)
+    loss_start = loss_start + 0.1 * \
+        (loss_start_loc_prop + loss_start_conf_prop)
+    loss_end = loss_end + 0.1 * (loss_end_loc_prop + loss_end_conf_prop)
 
     return loss_l, loss_c, loss_trans_l, loss_trans_c, loss_start, loss_end, loss_ct
 

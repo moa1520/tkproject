@@ -104,14 +104,14 @@ class FPN(nn.Module):
             use_bias=True,
             activation_fn=None
         )
-        self.center_head = _Unit1D(
-            in_channels=out_channels,
-            output_channels=1,
-            kernel_shape=3,
-            stride=1,
-            use_bias=True,
-            activation_fn=None
-        )
+        # self.center_head = _Unit1D(
+        #     in_channels=out_channels,
+        #     output_channels=1,
+        #     kernel_shape=3,
+        #     stride=1,
+        #     use_bias=True,
+        #     activation_fn=None
+        # )
 
         self.priors = []
         t = feat_t
@@ -126,7 +126,7 @@ class FPN(nn.Module):
         pyramid_feats = []
         locs = []
         confs = []
-        centers = []
+        # centers = []
         loc_feats = []
         conf_feats = []
 
@@ -172,18 +172,18 @@ class FPN(nn.Module):
                 .permute(0, 2, 1).contiguous()
             )
 
-            centers.append(self.center_head(loc_feat).view(
-                batch_num, 1, -1).permute(0, 2, 1).contiguous())
+            # centers.append(self.center_head(loc_feat).view(
+            #     batch_num, 1, -1).permute(0, 2, 1).contiguous())
 
         loc = torch.cat([o.view(batch_num, -1, 2) for o in locs], 1)
         conf = torch.cat([o.view(batch_num, -1, self.num_classes)
                          for o in confs], 1)
 
-        center = torch.cat([o.view(batch_num, -1, 1) for o in centers], 1)
+        # center = torch.cat([o.view(batch_num, -1, 1) for o in centers], 1)
         priors = torch.cat(self.priors, 0).to(loc.device).unsqueeze(0)
         loc_feat = torch.cat([o.permute(0, 2, 1) for o in loc_feats], 1)
         conf_feat = torch.cat([o.permute(0, 2, 1) for o in conf_feats], 1)
-        return loc, conf, center, priors, start, end, loc_feat, conf_feat, frame_level_feat
+        return loc, conf, priors, start, end, loc_feat, conf_feat, frame_level_feat
 
 
 class MLP(nn.Module):
