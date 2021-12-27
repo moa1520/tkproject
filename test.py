@@ -28,13 +28,15 @@ if not os.path.exists(output_path):
 
 fusion = False
 
+flow_data_path = config['testing'].get('flow_data_path',
+                                       './datasets/thumos14/test_flow_npy/')
+
 if __name__ == '__main__':
     video_infos = get_video_info(
         config['dataset']['testing']['video_info_path'])
     originidx_to_idx, idx_to_class = get_class_index_map()
 
     npy_data_path = config['dataset']['testing']['video_data_path']
-    flow_data_path = config['dataset']['testing']['flow_data_path']
 
     if fusion:
         rgb_net = PTN(num_classes, hidden_dim=512,
@@ -48,7 +50,8 @@ if __name__ == '__main__':
         flow_net.eval().cuda()
         net = rgb_net
     else:
-        net = PTN(num_classes, hidden_dim=512, in_channels=3, training=False)
+        net = PTN(num_classes, hidden_dim=512,
+                  in_channels=config['model']['in_channels'], training=False)
         net.load_state_dict(torch.load(checkpoint_path))
         net.eval().cuda()
 

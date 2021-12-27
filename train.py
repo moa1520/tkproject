@@ -162,8 +162,6 @@ def run_one_epoch(epoch, net, optimizer, data_loader, epoch_step_num, training=T
     loss_ct_val = 0
     loss_start_val = 0
     loss_end_val = 0
-    loss_trip_val = 0
-    loss_contras_val = 0
     cost_val = 0
 
     with tqdm(data_loader, total=epoch_step_num, ncols=0) as pbar:

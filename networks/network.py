@@ -127,8 +127,8 @@ class PTN(nn.Module):
             nqueries=num_queries,
             d_model=hidden_dim,
             nhead=4,
-            num_encoder_layers=2,
-            num_decoder_layers=1,
+            num_encoder_layers=4,
+            num_decoder_layers=4,
             dim_feedforward=1024,
             dropout=0,
             activation='leaky_relu',
@@ -137,9 +137,9 @@ class PTN(nn.Module):
         self.loc_mixup_branch = Mixup_Branch(512, 512)
         self.conf_mixup_branch = Mixup_Branch(512, 512)
 
-        self.input_proj = nn.Conv1d(512, hidden_dim, kernel_size=1)
-        self.class_embed = nn.Linear(hidden_dim, num_classes)
-        self.segments_embed = MLP(hidden_dim, hidden_dim, 2, 3)
+        # self.input_proj = nn.Conv1d(512, hidden_dim, kernel_size=1)
+        # self.class_embed = nn.Linear(hidden_dim, num_classes)
+        # self.segments_embed = MLP(hidden_dim, hidden_dim, 2, 3)
 
         self.loc_query_embed = nn.Embedding(num_queries, hidden_dim)
         self.conf_query_embed = nn.Embedding(num_queries, hidden_dim)
@@ -155,18 +155,18 @@ class PTN(nn.Module):
             activation_fn=None
         )
 
-        # self.prop_loc_head = _Unit1D(
-        #     in_channels=hidden_dim,
-        #     output_channels=2,
-        #     kernel_shape=1,
-        #     activation_fn=None)
+        self.prop_loc_head = _Unit1D(
+            in_channels=hidden_dim,
+            output_channels=2,
+            kernel_shape=1,
+            activation_fn=None)
 
-        # self.prop_conf_head = _Unit1D(
-        #     in_channels=hidden_dim,
-        #     output_channels=num_classes,
-        #     kernel_shape=1,
-        #     activation_fn=None
-        # )
+        self.prop_conf_head = _Unit1D(
+            in_channels=hidden_dim,
+            output_channels=num_classes,
+            kernel_shape=1,
+            activation_fn=None
+        )
 
     def forward(self, x):
         feat = self.backbone(x)
@@ -199,28 +199,28 @@ class PTN(nn.Module):
         pos = self.poisition_embedding(
             loc_trans_input.tensors, loc_trans_input.mask)
         src, mask = loc_trans_input.tensors, loc_trans_input.mask
-        src = self.input_proj(src)
+        # src = self.input_proj(src)
 
         query_embeds = self.loc_query_embed.weight
         hs, _, edge = self.transformer(src, (mask == 1), query_embeds, pos)
 
-        hs = hs.squeeze(0)
-        outputs_segments = F.relu(self.segments_embed(hs))
-        # outputs_segments = self.prop_loc_head(
-        #     hs[-1].permute(0, 2, 1)).permute(0, 2, 1)
+        # hs = hs.squeeze(0)
+        # outputs_segments = F.relu(self.segments_embed(hs))
+        outputs_segments = self.prop_loc_head(
+            hs[-1].permute(0, 2, 1)).permute(0, 2, 1)
 
         pos = self.poisition_embedding(
             conf_trans_input.tensors, conf_trans_input.mask)
         src, mask = conf_trans_input.tensors, conf_trans_input.mask
-        src = self.input_proj(src)
+        # src = self.input_proj(src)
 
         query_embeds = self.conf_query_embed.weight
         hs, _, edge = self.transformer(src, (mask == 1), query_embeds, pos)
 
-        hs = hs.squeeze(0)
-        outputs_class = self.class_embed(hs)
-        # outputs_class = self.prop_conf_head(
-        #     hs[-1].permute(0, 2, 1)).permute(0, 2, 1)
+        # hs = hs.squeeze(0)
+        # outputs_class = self.class_embed(hs)
+        outputs_class = self.prop_conf_head(
+            hs[-1].permute(0, 2, 1)).permute(0, 2, 1)
 
         return {
             'loc': loc,
