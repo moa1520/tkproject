@@ -11,6 +11,8 @@ from networks.feature_pyramid import FPN, MLP, _Unit1D, CoarseNetwork
 from networks.position_encoding import PositionEmbeddingLearned
 from networks.transformer import Graph_Transformer
 
+import matplotlib.pyplot as plt
+
 num_classes = config['dataset']['num_classes']
 freeze_bn = config['model']['freeze_bn']
 freeze_bn_affine = config['model']['freeze_bn_affine']
@@ -74,6 +76,16 @@ class Mixup_Branch(nn.Module):
             nn.ReLU(inplace=True)
         )
 
+    def findNearNum(self, exList, values):
+        answer = [0 for _ in range(2)]  # answer 리스트 0으로 초기화
+
+        minValue = min(exList, key=lambda x: abs(x-values))
+        minIndex = exList.index(minValue)
+        answer[0] = minIndex
+        answer[1] = minValue
+
+        return answer
+
     def forward(self, feature, frame_level_feature):
         '''
         feature: (1, 512, t); t = 126
@@ -86,16 +98,17 @@ class Mixup_Branch(nn.Module):
         inverse_cdf
         '''
         t = feature.size(2)
-        max_values = torch.max(frame_level_feature, dim=1)[0]
-        sum_value = torch.sum(max_values)
-        max_values /= sum_value
-        cdf_values = torch.cumsum(max_values, dim=1)[0]  # 256
+        # max_values = torch.max(frame_level_feature, dim=1)[0]
+        mean_values = torch.mean(frame_level_feature, dim=1)[0]
+        sum_value = torch.sum(mean_values)
+        mean_values /= sum_value
+        cdf_values = torch.cumsum(mean_values, dim=0)
         cdf_values = (cdf_values * t).int()
-        cur_idx = 0
+        cdf_values = torch.clamp(cdf_values, max=t-1).tolist()
+        idx_list = []
         for i in range(t):
-            while len(torch.where(cdf_values == cur_idx)[0]) == 0:
-                cur_idx += 1
-            idx = torch.where(cdf_values == cur_idx)[0][0]
+            idx, value = self.findNearNum(cdf_values, i)
+            idx_list.append(idx)
 
             if i == 0:
                 sampled_feature = frame_level_feature[:, :, idx].unsqueeze(-1)
@@ -103,6 +116,8 @@ class Mixup_Branch(nn.Module):
                 sampled_feature = torch.cat(
                     [sampled_feature, frame_level_feature[:, :, idx].unsqueeze(-1)], dim=-1)
         assert sampled_feature.size(2) == t
+
+        sampled_feature = sampled_feature.permute(1, 0).unsqueeze(0)
 
         mixed_feature = torch.cat(
             [sampled_feature, feature, fm_short], dim=1)

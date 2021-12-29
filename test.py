@@ -28,8 +28,14 @@ if not os.path.exists(output_path):
 
 fusion = False
 
+rgb_data_path = config['testing'].get('rgb_data_path',
+                                      './datasets/thumos14/test_npy/')
 flow_data_path = config['testing'].get('flow_data_path',
                                        './datasets/thumos14/test_flow_npy/')
+rgb_checkpoint_path = config['testing'].get('rgb_checkpoint_path',
+                                            './models/thumos14/checkpoint-15.ckpt')
+flow_checkpoint_path = config['testing'].get('flow_checkpoint_path',
+                                             './models/thumos14_flow/checkpoint-16.ckpt')
 
 if __name__ == '__main__':
     video_infos = get_video_info(
@@ -49,6 +55,7 @@ if __name__ == '__main__':
         rgb_net.eval().cuda()
         flow_net.eval().cuda()
         net = rgb_net
+        npy_data_path = rgb_data_path
     else:
         net = PTN(num_classes, hidden_dim=512,
                   in_channels=config['model']['in_channels'], training=False)
@@ -59,12 +66,11 @@ if __name__ == '__main__':
         score_func = nn.Softmax(dim=-1)
     else:
         score_func = nn.Sigmoid()
-
     centor_crop = videotransforms.CenterCrop(
         config['dataset']['testing']['crop_size'])
 
     result_dict = {}
-    for video_name in tqdm.tqdm(video_infos.keys(), ncols=0):
+    for video_name in tqdm.tqdm(list(video_infos.keys()), ncols=0):
         sample_count = video_infos[video_name]['sample_count']
         sample_fps = video_infos[video_name]['sample_fps']
         if sample_count < clip_length:
@@ -99,8 +105,8 @@ if __name__ == '__main__':
             if fusion:
                 flow_clip = flow_data[:, offset: offset + clip_length]
                 flow_clip = flow_clip.float()
-                flow_clip = (flow_clip * 255.0) * 2.0 - 1.0
-
+                flow_clip = (flow_clip / 255.0) * 2.0 - 1.0
+            # clip = torch.from_numpy(clip).float()
             if clip.size(1) < clip_length:
                 tmp = torch.zeros([clip.size(0), clip_length - clip.size(1),
                                    96, 96]).float()
@@ -108,8 +114,8 @@ if __name__ == '__main__':
             clip = clip.unsqueeze(0).cuda()  # (1, 3, 256, 96, 96)
             if fusion:
                 if flow_clip.size(1) < clip_length:
-                    tmp = torch.zeros(
-                        [flow_clip.size(0), clip_length - flow_clip.size(1), 96, 96]).float()
+                    tmp = torch.zeros([flow_clip.size(0), clip_length - flow_clip.size(1),
+                                       96, 96]).float()
                     flow_clip = torch.cat([flow_clip, tmp], dim=1)
                 flow_clip = flow_clip.unsqueeze(0).cuda()
 
@@ -121,7 +127,6 @@ if __name__ == '__main__':
             loc, conf, priors = output_dict['loc'], output_dict['conf'], output_dict['priors'][0]
             prop_loc, prop_conf = output_dict['refined_loc'], output_dict['refined_cls']
             center = output_dict['center']
-
             if fusion:
                 rgb_conf = conf[0]
                 rgb_loc = loc[0]
@@ -129,7 +134,8 @@ if __name__ == '__main__':
                 rgb_prop_conf = prop_conf[0]
                 rgb_center = center[0]
 
-                loc, conf, priors = flow_output_dict['loc'], flow_output_dict['conf'], flow_output_dict['priors'][0]
+                loc, conf, priors = flow_output_dict['loc'], flow_output_dict['conf'], \
+                    flow_output_dict['priors'][0]
                 prop_loc, prop_conf = flow_output_dict['refined_loc'], flow_output_dict['refined_cls']
                 center = flow_output_dict['center']
 
@@ -144,6 +150,7 @@ if __name__ == '__main__':
                 conf = (rgb_conf + flow_conf) / 2.0
                 prop_conf = (rgb_prop_conf + flow_prop_conf) / 2.0
                 center = (rgb_center + flow_center) / 2.0
+
             else:
                 loc = loc[0]
                 conf = conf[0]
@@ -183,6 +190,7 @@ if __name__ == '__main__':
                 # np.set_printoptions(precision=3, suppress=True)
                 # print(idx_to_class[cl], tmp.detach().cpu().numpy())
 
+        # print(output[1][0].size(), output[2][0].size())
         sum_count = 0
         for cl in range(1, num_classes):
             if len(output[cl]) == 0:

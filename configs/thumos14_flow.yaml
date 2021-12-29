@@ -27,7 +27,7 @@ training:
   batch_size: 1
   learning_rate: 1e-5
   weight_decay: 1e-3
-  max_epoch: 50
+  max_epoch: 20
   checkpoint_path: ./models/thumos14_flow/
   random_seed: 2023
   focal_loss: true

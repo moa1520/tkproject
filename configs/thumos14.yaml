@@ -28,7 +28,7 @@ training:
   batch_size: 1
   learning_rate: 1e-5
   weight_decay: 1e-3
-  max_epoch: 50
+  max_epoch: 20
   checkpoint_path: ./models/thumos14/
   random_seed: 2023
   focal_loss: true
@@ -40,6 +40,6 @@ testing:
   top_k: 5000
   nms_thresh: 0.5
   nms_sigma: 0.5
-  checkpoint_path: models/thumos14/checkpoint_15.pth
+  checkpoint_path: models/thumos14/checkpoint_14_best.pth
   output_path: ./output
   output_json: detection_results.json
