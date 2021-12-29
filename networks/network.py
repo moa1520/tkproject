@@ -117,8 +117,6 @@ class Mixup_Branch(nn.Module):
                     [sampled_feature, frame_level_feature[:, :, idx].unsqueeze(-1)], dim=-1)
         assert sampled_feature.size(2) == t
 
-        sampled_feature = sampled_feature.permute(1, 0).unsqueeze(0)
-
         mixed_feature = torch.cat(
             [sampled_feature, feature, fm_short], dim=1)
         mixed_feature = self.proposal_conv(mixed_feature)
