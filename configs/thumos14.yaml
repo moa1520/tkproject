@@ -40,6 +40,6 @@ testing:
   top_k: 5000
   nms_thresh: 0.5
   nms_sigma: 0.5
-  checkpoint_path: models/thumos14/checkpoint_14_best.pth
+  checkpoint_path: models/thumos14/checkpoint_14.pth
   output_path: ./output
   output_json: detection_results.json
