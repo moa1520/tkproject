@@ -23,6 +23,7 @@ model:
   freeze_bn: true
   freeze_bn_affine: true
   backbone_model: ./models/i3d_models/rgb_imagenet.pt
+  num_pyramid: 4
 
 training:
   batch_size: 1
@@ -33,7 +34,7 @@ training:
   random_seed: 2023
   focal_loss: true
   hidden_dim: 512
-  num_queries: 126
+  num_queries: 25
 
 testing:
   conf_thresh: 0.01

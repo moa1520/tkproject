@@ -12,7 +12,7 @@ from tqdm import tqdm
 from common.configs import config
 from common.dataloader import THUMOS_Dataset, get_video_anno, get_video_info
 from multisegment_loss import MultiSegmentLoss
-from networks.network import PTN
+from networks.network_2 import PTN
 
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # Set the GPU 1 to use
@@ -135,7 +135,9 @@ def one_forward(net, clips, targets, scores=None, training=True):
 
     loss_start, loss_end = calc_bce_loss(
         output['start'], output['end'], scores)
-    scores_ = F.interpolate(scores, config['training']['num_queries'])
+    # scores_ = F.interpolate(scores, config['training']['num_queries'])
+    scores_ = F.interpolate(
+        scores, config['training']['num_queries'] * config['model']['num_pyramid'])
     loss_start_loc_prop, loss_end_loc_prop = calc_bce_loss(output['start_loc_prop'],
                                                            output['end_loc_prop'],
                                                            scores_)
