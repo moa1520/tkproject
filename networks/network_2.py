@@ -137,7 +137,7 @@ class PTN(nn.Module):
             nhead=4,
             num_encoder_layers=4,
             num_decoder_layers=4,
-            dim_feedforward=2048,
+            dim_feedforward=1024,
             dropout=0,
             activation='leaky_relu',
             normalize_before=True,
@@ -168,9 +168,9 @@ class PTN(nn.Module):
         )
 
         self.coarse_regressor = MLP(hidden_dim, hidden_dim, 2, 3)
-        self.coarse_classifier = MLP(hidden_dim, hidden_dim, num_classes, 1)
+        self.coarse_classifier = nn.Linear(hidden_dim, num_classes)
         self.refine_regressor = MLP(hidden_dim, hidden_dim, 2, 3)
-        self.refine_classifier = MLP(hidden_dim, hidden_dim, num_classes, 1)
+        self.refine_classifier = nn.Linear(hidden_dim, num_classes)
 
         self.loc_braches = nn.ModuleList()
 
