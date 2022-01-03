@@ -5,13 +5,10 @@ import torch.nn.functional as F
 from common.configs import config
 from common.misc import nested_tensor_from_tensor_list
 from i3d_backbone import InceptionI3d
-from pytorch_model_summary import summary
 
-from networks.feature_pyramid import FPN, MLP, _Unit1D, CoarseNetwork
+from networks.feature_pyramid import MLP, _Unit1D
 from networks.position_encoding import PositionEmbeddingLearned
 from networks.transformer import Graph_Transformer
-
-import matplotlib.pyplot as plt
 
 num_classes = config['dataset']['num_classes']
 freeze_bn = config['model']['freeze_bn']
@@ -88,7 +85,7 @@ class Mixup_Branch(nn.Module):
 
     def forward(self, feature, frame_level_feature):
         '''
-        feature: (1, 512, t); t = 126
+        feature: (1, 512, t); t = 100
         frame_level_feature: (1, 512, 256)
         '''
         fm_short = self.cur_point_conv(feature)
@@ -131,29 +128,15 @@ class PTN(nn.Module):
         self.num_queries = num_queries
         self.backbone = I3D_BackBone(in_channels=in_channels)
         self._training = training
-        self.coarseNet = CoarseNetwork(self.num_classes, 1024, 512)
-        self.feature_pyramid_net = FPN(self.num_classes, [832, 1024])
         self.poisition_embedding = PositionEmbeddingLearned(
             num_pos_dict=512, num_pos_feats=hidden_dim)
 
-        self.loc_transformer = Graph_Transformer(
+        self.transformer = Graph_Transformer(
             nqueries=num_queries,
             d_model=hidden_dim,
-            nhead=8,
-            num_encoder_layers=6,
-            num_decoder_layers=6,
-            dim_feedforward=2048,
-            dropout=0,
-            activation='leaky_relu',
-            normalize_before=True,
-            return_intermediate_dec=True)
-
-        self.conf_transformer = Graph_Transformer(
-            nqueries=num_queries,
-            d_model=hidden_dim,
-            nhead=8,
-            num_encoder_layers=6,
-            num_decoder_layers=6,
+            nhead=4,
+            num_encoder_layers=4,
+            num_decoder_layers=4,
             dim_feedforward=2048,
             dropout=0,
             activation='leaky_relu',
@@ -244,6 +227,8 @@ class PTN(nn.Module):
     def forward(self, x):
         loc_feats = []
         conf_feats = []
+        loc_memories = []
+        conf_memories = []
         coarse_boundaries = []
         coarse_classes = []
         frame_num = x.size(2)
@@ -278,8 +263,9 @@ class PTN(nn.Module):
             src, mask = loc_trans_input.tensors, loc_trans_input.mask
 
             query_embeds = self.loc_query_embed.weight
-            hs, _, edge = self.loc_transformer(
+            hs, memory, edge = self.transformer(
                 src, (mask == 1), query_embeds, pos)
+            loc_memories.append(memory)
 
             coarse_boundary = self.coarse_regressor(hs[-1])
             coarse_boundaries.append(coarse_boundary)
@@ -289,14 +275,15 @@ class PTN(nn.Module):
             src, mask = conf_trans_input.tensors, conf_trans_input.mask
 
             query_embeds = self.conf_query_embed.weight
-            hs, _, edge = self.conf_transformer(
+            hs, memory, edge = self.transformer(
                 src, (mask == 1), query_embeds, pos)
+            conf_memories.append(memory)
 
             coarse_class = self.coarse_classifier(hs[-1])
             coarse_classes.append(coarse_class)
 
-        loc_feat = torch.cat(loc_feats, dim=2)
-        conf_feat = torch.cat(conf_feats, dim=2)
+        loc_feat = torch.cat(loc_memories, dim=2)
+        conf_feat = torch.cat(conf_memories, dim=2)
         loc_mixup_feat, loc_mixup_feat_ = self.loc_mixup_branch(
             loc_feat, frame_level_feat)  # N x C x T
         conf_mixup_feat, conf_mixup_feat_ = self.conf_mixup_branch(
