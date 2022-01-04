@@ -102,10 +102,8 @@ class Mixup_Branch(nn.Module):
         cdf_values = torch.cumsum(mean_values, dim=0)
         cdf_values = (cdf_values * t).int()
         cdf_values = torch.clamp(cdf_values, max=t-1).tolist()
-        idx_list = []
         for i in range(t):
             idx, value = self.findNearNum(cdf_values, i)
-            idx_list.append(idx)
 
             if i == 0:
                 sampled_feature = frame_level_feature[:, :, idx].unsqueeze(-1)
