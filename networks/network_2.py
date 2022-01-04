@@ -263,7 +263,7 @@ class PTN(nn.Module):
             query_embeds = self.loc_query_embed.weight
             hs, memory, edge = self.transformer(
                 src, (mask == 1), query_embeds, pos)
-            loc_memories.append(memory)
+            loc_memories.append(hs[-1])
 
             coarse_boundary = self.coarse_regressor(hs[-1])
             coarse_boundaries.append(coarse_boundary)
@@ -275,13 +275,13 @@ class PTN(nn.Module):
             query_embeds = self.conf_query_embed.weight
             hs, memory, edge = self.transformer(
                 src, (mask == 1), query_embeds, pos)
-            conf_memories.append(memory)
+            conf_memories.append(hs[-1])
 
             coarse_class = self.coarse_classifier(hs[-1])
             coarse_classes.append(coarse_class)
 
-        loc_feat = torch.cat(loc_memories, dim=2)
-        conf_feat = torch.cat(conf_memories, dim=2)
+        loc_feat = torch.cat(loc_memories, dim=1).permute(0, 2, 1)
+        conf_feat = torch.cat(conf_memories, dim=1).permute(0, 2, 1)
         loc_mixup_feat, loc_mixup_feat_ = self.loc_mixup_branch(
             loc_feat, frame_level_feat)  # N x C x T
         conf_mixup_feat, conf_mixup_feat_ = self.conf_mixup_branch(
