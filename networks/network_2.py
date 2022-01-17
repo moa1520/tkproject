@@ -6,7 +6,7 @@ from common.configs import config
 from common.misc import nested_tensor_from_tensor_list
 from i3d_backbone import InceptionI3d
 
-from networks.feature_pyramid import MLP, _Unit1D
+from networks.feature_pyramid import MLP, _Unit1D, ScaleExp
 from networks.position_encoding import PositionEmbeddingLearned
 from networks.transformer import Graph_Transformer
 
@@ -213,10 +213,11 @@ class PTN(nn.Module):
             nn.GroupNorm(32, 512),
             nn.ReLU(inplace=True),
         )
-
+        self.loc_heads = nn.ModuleList()
         self.priors = []
         t = [32, 28, 24, 16]
         for i in range(4):
+            self.loc_heads.append(ScaleExp())
             self.priors.append(
                 torch.Tensor([[(c + 0.5) / t[i]]
                              for c in range(t[i])]).view(-1, 1)
@@ -265,7 +266,7 @@ class PTN(nn.Module):
                 src, (mask == 1), query_embeds, pos)
             loc_memories.append(hs[-1])
 
-            coarse_boundary = self.coarse_regressor(hs[-1])
+            coarse_boundary = self.loc_heads[i](self.coarse_regressor(hs[-1]))
             coarse_boundaries.append(coarse_boundary)
 
             pos = self.poisition_embedding(

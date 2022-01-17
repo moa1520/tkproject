@@ -23,7 +23,6 @@ model:
   freeze_bn: true
   freeze_bn_affine: true
   backbone_model: ./models/i3d_models/rgb_imagenet.pt
-  num_pyramid: 4
 
 training:
   batch_size: 1
@@ -34,13 +33,14 @@ training:
   random_seed: 2023
   focal_loss: true
   hidden_dim: 512
-  num_queries: 25
+  num_queries: 126
+  num_heads: 8
 
 testing:
   conf_thresh: 0.01
   top_k: 5000
   nms_thresh: 0.5
   nms_sigma: 0.5
-  checkpoint_path: models/thumos14/checkpoint_14.pth
+  checkpoint_path: models/thumos14/checkpoint_19.pth
   output_path: ./output
   output_json: detection_results.json

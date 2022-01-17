@@ -9,6 +9,7 @@ from pytorch_model_summary import summary
 
 from networks.feature_pyramid import FPN, MLP, _Unit1D, CoarseNetwork
 from networks.position_encoding import PositionEmbeddingLearned
+from networks.temporal_encoder import TemporalEncoder
 from networks.transformer import Graph_Transformer
 
 import matplotlib.pyplot as plt
@@ -139,9 +140,9 @@ class PTN(nn.Module):
         self.transformer = Graph_Transformer(
             nqueries=num_queries,
             d_model=hidden_dim,
-            nhead=4,
-            num_encoder_layers=4,
-            num_decoder_layers=4,
+            nhead=8,
+            num_encoder_layers=2,
+            num_decoder_layers=6,
             dim_feedforward=1024,
             dropout=0,
             activation='leaky_relu',

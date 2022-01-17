@@ -17,14 +17,14 @@ def main():
     model.eval()
 
     train_video_infos = get_video_info(
-        config['dataset']['training']['video_info_path'])
+        config['dataset']['testing']['video_info_path'])
     train_video_annos = get_video_anno(
-        train_video_infos, config['dataset']['training']['video_anno_path'])
+        train_video_infos, config['dataset']['testing']['video_anno_path'])
     train_dataset = THUMOS_Dataset(None,
                                    train_video_infos,
                                    train_video_annos)
     train_dataloader = DataLoader(
-        train_dataset, batch_size=1, shuffle=True, pin_memory=True, drop_last=True)
+        train_dataset, batch_size=1, shuffle=False, pin_memory=True, drop_last=True)
 
     MSLoss = MultiSegmentLoss(
         21, config['training']['piou'], use_focal_loss=config['training']['focal_loss'])

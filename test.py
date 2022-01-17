@@ -10,7 +10,7 @@ from common import videotransforms
 from common.configs import config
 from common.dataloader import get_class_index_map, get_video_info
 from common.segment_utils import softnms_v2
-from networks.network import PTN
+from networks.network_testing import PTN
 
 num_classes = config['dataset']['num_classes']
 conf_thresh = config['testing']['conf_thresh']
@@ -45,9 +45,9 @@ if __name__ == '__main__':
     npy_data_path = config['dataset']['testing']['video_data_path']
 
     if fusion:
-        rgb_net = PTN(num_classes, hidden_dim=512,
+        rgb_net = PTN(num_classes, num_queries=config['training']['num_queries'], hidden_dim=512,
                       in_channels=3, training=False)
-        flow_net = PTN(num_classes, hidden_dim=512,
+        flow_net = PTN(num_classes, num_queries=config['training']['num_queries'], hidden_dim=512,
                        in_channels=2, training=False)
         rgb_net.load_state_dict(torch.load(checkpoint_path))
         flow_net.load_state_dict(torch.load(
@@ -57,7 +57,7 @@ if __name__ == '__main__':
         net = rgb_net
         npy_data_path = rgb_data_path
     else:
-        net = PTN(num_classes, hidden_dim=512,
+        net = PTN(num_classes, num_queries=config['training']['num_queries'], hidden_dim=512,
                   in_channels=config['model']['in_channels'], training=False)
         net.load_state_dict(torch.load(checkpoint_path))
         net.eval().cuda()
@@ -71,6 +71,10 @@ if __name__ == '__main__':
 
     result_dict = {}
     for video_name in tqdm.tqdm(list(video_infos.keys()), ncols=0):
+        # '''테스트중'''
+        # if video_name != 'video_test_0000220':
+        #     continue
+        # ''''''
         sample_count = video_infos[video_name]['sample_count']
         sample_fps = video_infos[video_name]['sample_fps']
         if sample_count < clip_length:

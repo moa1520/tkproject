@@ -18,7 +18,8 @@ def get_config():
     parser.add_argument('--hidden_dim', type=int)
     parser.add_argument('--lw', type=float, default=10.0)
     parser.add_argument('--cw', type=float, default=1)
-    parser.add_argument('--resume', type=int, default=0)
+    parser.add_argument('--ssl', type=float, default=0.1)
+    parser.add_argument('--resume', type=int, default=7)
 
     parser.add_argument('--nms_thresh', type=float)
     parser.add_argument('--nms_sigma', type=float)
@@ -48,6 +49,7 @@ def get_config():
         data['testing']['checkpoint_path'] = args.checkpoint_path
     data['training']['lw'] = args.lw
     data['training']['cw'] = args.cw
+    data['training']['ssl'] = args.ssl
     data['training']['resume'] = args.resume
     if args.seed is not None:
         data['training']['random_seed'] = args.seed

@@ -122,14 +122,13 @@ class FPN(nn.Module):
             )
             t = t // 2
 
-    def forward(self, feat_dict):
+    def forward(self, feat_dict, ssl=False):
         pyramid_feats = []
         locs = []
         confs = []
         # centers = []
         loc_feats = []
         conf_feats = []
-
         x2 = feat_dict['Mixed_5c']
         x1 = feat_dict['Mixed_4f']
         batch_num = x1.size(0)
@@ -171,6 +170,36 @@ class FPN(nn.Module):
                 self.conf_head(conf_feat).view(batch_num, self.num_classes, -1)
                 .permute(0, 2, 1).contiguous()
             )
+            # t = feat.size(2)
+            # with torch.no_grad():
+            #     segments = locs[-1] / self.frame_num * t
+            #     priors = self.priors[i].expand(batch_num, t, 1).to(feat.device)
+            #     new_priors = torch.round(priors * t - 0.5)
+            #     plen = segments[:, :, :1] + segments[:, :, 1:]
+            #     plen = torch.clamp(plen / 5.0, min=1.0)
+
+            #     l_segment = new_priors - segments[:, :, :1]
+            #     r_segment = new_priors + segments[:, :, 1:]
+            #     segments = torch.cat([
+            #         torch.round(l_segment - plen),
+            #         torch.round(l_segment + plen),
+            #         torch.round(r_segment - plen),
+            #         torch.round(r_segment + plen)
+            #     ], dim=-1)
+
+            #     decoded_segments = torch.cat([
+            #         priors[:, :, :1] * self.frame_num - locs[-1][:, :, :1],
+            #         priors[:, :, :1] * self.frame_num + locs[-1][:, :, 1:]
+            #     ], dim=-1)
+            #     plen = decoded_segments[:, :, 1:] - \
+            #         decoded_segments[:, :, :1] + 1.0
+            #     plen = torch.clamp(plen / 5.0, min=1.0)
+            #     frame_segments = torch.cat([
+            #         torch.round(decoded_segments[:, :, :1] - plen),
+            #         torch.round(decoded_segments[:, :, :1] + plen),
+            #         torch.round(decoded_segments[:, :, 1:] - plen),
+            #         torch.round(decoded_segments[:, :, 1:] + plen)
+            #     ], dim=-1)
 
             # centers.append(self.center_head(loc_feat).view(
             #     batch_num, 1, -1).permute(0, 2, 1).contiguous())
@@ -183,6 +212,8 @@ class FPN(nn.Module):
         priors = torch.cat(self.priors, 0).to(loc.device).unsqueeze(0)
         loc_feat = torch.cat([o.permute(0, 2, 1) for o in loc_feats], 1)
         conf_feat = torch.cat([o.permute(0, 2, 1) for o in conf_feats], 1)
+        if ssl:
+            return loc, conf, priors, loc_feat, conf_feat, frame_level_feat
         return loc, conf, priors, start, end, loc_feat, conf_feat, frame_level_feat
 
 
