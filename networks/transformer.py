@@ -163,8 +163,8 @@ class GraphTransformerEncoderLayer(nn.Module):
                     src_mask: Optional[Tensor] = None,
                     src_key_padding_mask: Optional[Tensor] = None,
                     pos: Optional[Tensor] = None):
-        q = k = self.with_pos_embed(src, pos)
         src2 = self.norm1(src)
+        q = k = self.with_pos_embed(src2, pos)
         if src_mask:
             graph = q.permute(1, 0, 2) * src_mask[:, :, None]
         else:

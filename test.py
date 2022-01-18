@@ -10,7 +10,7 @@ from common import videotransforms
 from common.configs import config
 from common.dataloader import get_class_index_map, get_video_info
 from common.segment_utils import softnms_v2
-from networks.network_testing import PTN
+from networks.network_testing_ssl import PTN
 
 num_classes = config['dataset']['num_classes']
 conf_thresh = config['testing']['conf_thresh']

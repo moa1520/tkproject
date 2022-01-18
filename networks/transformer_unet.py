@@ -84,17 +84,17 @@ class Graph_Transformer(nn.Module):
         encoder_mask = None
 
         memory1 = self.encoder1(src1, mask=encoder_mask,
-                               src_key_padding_mask=src_mask, pos=pos_embed1)
+                                src_key_padding_mask=src_mask, pos=pos_embed1)
         memory2 = self.encoder2(src2, mask=encoder_mask,
-                               src_key_padding_mask=src_mask, pos=pos_embed2)
+                                src_key_padding_mask=src_mask, pos=pos_embed2)
         memory3 = self.encoder3(src3, mask=encoder_mask,
-                               src_key_padding_mask=src_mask, pos=pos_embed3)
+                                src_key_padding_mask=src_mask, pos=pos_embed3)
         memory4 = self.encoder4(src4, mask=encoder_mask,
-                               src_key_padding_mask=src_mask, pos=pos_embed4)
+                                src_key_padding_mask=src_mask, pos=pos_embed4)
         memory5 = self.encoder5(src5, mask=encoder_mask,
-                               src_key_padding_mask=src_mask, pos=pos_embed5)
+                                src_key_padding_mask=src_mask, pos=pos_embed5)
         memory6 = self.encoder6(src6, mask=encoder_mask,
-                               src_key_padding_mask=src_mask, pos=pos_embed6)
+                                src_key_padding_mask=src_mask, pos=pos_embed6)
 
         ctx1 = memory1
         ctx2 = memory2
@@ -107,32 +107,32 @@ class Graph_Transformer(nn.Module):
         tgt6 = torch.zeros_like(query_embed6)
         src_mask = torch.zeros(1, tgt6.size(0))
         hs6, edge = self.decoder6(tgt6, ctx6.permute(1, 0, 2), tgt_mask=tgt_mask,
-                                 memory_key_padding_mask=src_mask, pos=pos_embed6, query_pos=query_embed6)
+                                  memory_key_padding_mask=src_mask, pos=pos_embed6, query_pos=query_embed6)
         query_embed5 = torch.cat([query_embed5, hs6[-1]], dim=0)
 
         tgt5 = torch.zeros_like(query_embed5)
         hs5, edge = self.decoder5(tgt5, ctx5.permute(1, 0, 2), tgt_mask=tgt_mask,
-                                 memory_key_padding_mask=src_mask, pos=pos_embed5, query_pos=query_embed5)
+                                  memory_key_padding_mask=src_mask, pos=pos_embed5, query_pos=query_embed5)
         query_embed4 = torch.cat([query_embed4, hs5[-1]], dim=0)
 
         tgt4 = torch.zeros_like(query_embed4)
         hs4, edge = self.decoder4(tgt4, ctx4.permute(1, 0, 2), tgt_mask=tgt_mask,
-                                 memory_key_padding_mask=src_mask, pos=pos_embed4, query_pos=query_embed4)
+                                  memory_key_padding_mask=src_mask, pos=pos_embed4, query_pos=query_embed4)
         query_embed3 = torch.cat([query_embed3, hs4[-1]], dim=0)
 
         tgt3 = torch.zeros_like(query_embed3)
         hs3, edge = self.decoder3(tgt3, ctx3.permute(1, 0, 2), tgt_mask=tgt_mask,
-                                 memory_key_padding_mask=src_mask, pos=pos_embed3, query_pos=query_embed3)
+                                  memory_key_padding_mask=src_mask, pos=pos_embed3, query_pos=query_embed3)
         query_embed2 = torch.cat([query_embed2, hs3[-1]], dim=0)
 
         tgt2 = torch.zeros_like(query_embed2)
         hs2, edge = self.decoder2(tgt2, ctx2.permute(1, 0, 2), tgt_mask=tgt_mask,
-                                 memory_key_padding_mask=src_mask, pos=pos_embed2, query_pos=query_embed2)
+                                  memory_key_padding_mask=src_mask, pos=pos_embed2, query_pos=query_embed2)
         query_embed1 = torch.cat([query_embed1, hs2[-1]], dim=0)
 
         tgt1 = torch.zeros_like(query_embed1)
         hs, edge = self.decoder1(tgt1, ctx1.permute(1, 0, 2), tgt_mask=tgt_mask,
-                                memory_key_padding_mask=src_mask, pos=pos_embed1, query_pos=query_embed1)
+                                 memory_key_padding_mask=src_mask, pos=pos_embed1, query_pos=query_embed1)
 
         return hs.transpose(1, 2)
         # return hs.transpose(1, 2), memory.permute(1, 2, 0), edge
@@ -249,15 +249,15 @@ class GraphTransformerEncoderLayer(nn.Module):
                     src_mask: Optional[Tensor] = None,
                     src_key_padding_mask: Optional[Tensor] = None,
                     pos: Optional[Tensor] = None):
-        q = k = self.with_pos_embed(src, pos)
         src2 = self.norm1(src)
+        q = k = self.with_pos_embed(src2, pos)
         if src_mask:
             graph = q.permute(1, 0, 2) * src_mask[:, :, None]
         else:
             graph = q.permute(1, 0, 2)
 
         adj = (torch.ones((q.size(1), q.size(0), q.size(0))))
-        adj = adj.to(q.device)
+        adj = adj.to(q.device)  # Value
         # src2, _ = self.self_attn(graph, pos, adj).permute(1, 0, 2)
         src2 = self.self_attn(graph, pos, adj)[0].permute(1, 0, 2)
         src = src + self.dropout1(src2)
