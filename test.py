@@ -51,7 +51,7 @@ if __name__ == '__main__':
                        in_channels=2, training=False)
         rgb_net.load_state_dict(torch.load(checkpoint_path))
         flow_net.load_state_dict(torch.load(
-            'models/thumos14_flow/checkpoint_15.pth'))
+            'models/thumos14_flow/checkpoint_22.pth'))
         rgb_net.eval().cuda()
         flow_net.eval().cuda()
         net = rgb_net

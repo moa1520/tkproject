@@ -27,10 +27,13 @@ training:
   batch_size: 1
   learning_rate: 1e-4
   weight_decay: 1e-4
-  max_epoch: 16
+  max_epoch: 25
   focal_loss: true
   checkpoint_path: models/anet_flow/
   random_seed: 2020
+  hidden_dim: 512
+  num_queries: 126
+  num_heads: 8
 
 testing:
   conf_thresh: 0.01

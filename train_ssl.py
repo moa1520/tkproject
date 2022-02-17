@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from common.configs import config
-from common.dataloader_ssl import THUMOS_Dataset, get_video_anno, get_video_info
+from common.dataloader_ssl import (THUMOS_Dataset, detection_collate,
+                                   get_video_anno, get_video_info)
 from multisegment_loss import MultiSegmentLoss
 from networks.network_testing_ssl import PTN
 
@@ -180,6 +181,8 @@ def run_one_epoch(epoch, net, optimizer, data_loader, epoch_step_num, training=T
 
     with tqdm(data_loader, total=epoch_step_num, ncols=0) as pbar:
         for n_iter, (clips, targets, scores, ssl_clips, ssl_targets, flags) in enumerate(pbar):
+            if n_iter < 930:
+                continue
 
             loss_l, loss_c, loss_trans_l, loss_trans_c, loss_start, loss_end, loss_ct = one_forward(
                 net, clips, targets, scores, training=training, ssl=False)
@@ -277,7 +280,7 @@ if __name__ == '__main__':
                                    train_video_infos,
                                    train_video_annos)
     train_dataloader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, worker_init_fn=worker_init_fn, pin_memory=True, drop_last=True)
+        train_dataset, batch_size=batch_size, shuffle=True, worker_init_fn=worker_init_fn, pin_memory=True, drop_last=True, collate_fn=detection_collate)
     total_iter_num = len(train_dataset) // batch_size
 
     '''

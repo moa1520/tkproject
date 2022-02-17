@@ -1,74 +1,77 @@
-# from datetime import datetime
-
-# import numpy as np
-import torch
-# import torch.nn as nn
-from torch.utils.data import DataLoader
-
-# from common import videotransforms
-from common.configs import config
-from common.dataloader import THUMOS_Dataset, get_video_anno, get_video_info
-from networks.network import PTN
-from multisegment_loss import MultiSegmentLoss
+import json
+import seaborn as sns
+import numpy as np
+import matplotlib.pyplot as plt
 
 
-def main():
-    model = PTN(21, num_queries=126, hidden_dim=512, training=False)
-    model.eval()
-
-    train_video_infos = get_video_info(
-        config['dataset']['testing']['video_info_path'])
-    train_video_annos = get_video_anno(
-        train_video_infos, config['dataset']['testing']['video_anno_path'])
-    train_dataset = THUMOS_Dataset(None,
-                                   train_video_infos,
-                                   train_video_annos)
-    train_dataloader = DataLoader(
-        train_dataset, batch_size=1, shuffle=False, pin_memory=True, drop_last=True)
-
-    MSLoss = MultiSegmentLoss(
-        21, config['training']['piou'], use_focal_loss=config['training']['focal_loss'])
-
-    for n_iter, (clips, targets, scores) in enumerate(train_dataloader):
-        clips, targets = clips, targets
-        print(clips.shape)
-        print(targets.shape)
-
-        output = model(clips)
-
-        print(output['loc'].shape, output['conf'].shape,
-              output['refined_loc'].shape, output['refined_cls'].shape)
-
-        MSLoss([output['loc'], output['conf'], output['center'], output['priors']
-               [0], output['refined_loc'], output['refined_cls']], targets)
-
-        if n_iter == 2:
-            break
+def open_json_file(filename):
+    with open(filename, encoding='UTF8') as file:
+        try:
+            return json.load(file)
+        except ValueError as e:
+            print('Parsing error: {}'.format(e))
+            return None
 
 
 if __name__ == '__main__':
-    main()
+    x = list(range(25))
+    y = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 8, 0, 0, 8, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 8, 0, 0, 8, 0, 0, 0, 0],
+        [0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 6, 8, 0, 0, 8, 6, 0, 0, 0],
+        [0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 6, 8, 0, 0, 8, 6, 0, 0, 0],
+        [0, 0, 0, 0, 6, 0, 0, 0, 4, 0, 0, 0, 0,
+            0, 0, 0, 6, 8, 0, 0, 8, 6, 0, 0, 0],
+        [0, 0, 0, 0, 6, 0, 0, 3, 4, 0, 0, 0, 0,
+            0, 0, 3, 6, 8, 0, 0, 8, 6, 0, 0, 0],
+        [0, 0, 0, 0, 6, 2, 0, 3, 4, 0, 2, 2, 2,
+         0, 0, 3, 6, 8, 2, 3, 8, 6, 2, 2, 0],
+        [1, 1, 1, 1, 6, 2, 1, 3, 4, 1, 2, 2, 2,
+         1, 1, 3, 6, 8, 2, 3, 8, 6, 2, 2, 1]
+    ]
+    yy = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8,
+            0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8,
+            0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 6, 8,
+            0, 8, 6, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 6, 8,
+            0, 8, 6, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 4, 0, 6, 8,
+            0, 8, 6, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 6, 0, 3, 4, 0, 6, 8,
+            3, 8, 6, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 6, 2, 3, 4, 2, 6, 8,
+            3, 8, 6, 2, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 1, 6, 2, 3, 4, 2, 6,
+            8, 3, 8, 6, 2, 0, 0, 0, 0, 0, 0, 0]
+    ]
 
-    # cetner_crop = videotransforms.CenterCrop(size=96)
+    y = np.array(y)
+    yy = np.array(yy)
+    # sns.heatmap(y)
+    plt.subplot(2, 1, 1)
+    plt.imshow(y, cmap='Reds')
+    plt.subplot(2, 1, 2)
+    plt.imshow(yy, cmap='Reds')
+    plt.show()
+    # plt.bar(x, y, width=1)
+    # plt.show()
 
-    # rgb = np.load('datasets/thumos14/test_npy/video_test_0000051.npy')
-    # flow = np.load('datasets/thumos14/test_flow_npy/video_test_0000051.npy')
+    # result = 'datasets/anet_annotations/video_info_train_val.json'
 
-    # rgb = np.transpose(rgb, [3, 0, 1, 2])
-    # rgb = cetner_crop(rgb)
-    # rgb = torch.from_numpy(rgb).float().unsqueeze(0)
-    # rgb = (rgb / 255.0) * 2.0 - 1.0
+    # data = open_json_file(result)
 
-    # flow = np.transpose(flow, [3, 0, 1, 2])
-    # flow = cetner_crop(flow)
-    # flow = torch.from_numpy(flow).float().unsqueeze(0)
-    # flow = (flow / 255.0) * 2.0 - 1.0
-
-    # print(flow.shape)
-    # rgb = torch.Tensor(1, 3, 256, 96, 96).cuda()
-    # print(rgb.shape)
-
-    # net = PTN(num_classes=21, num_queries=126, hidden_dim=256).cuda()
-
-    # out = net(rgb)
-    # print(out.shape)
+    # for i, item in enumerate(data.items()):
+    #     if i == 0:
+    #         print(len(list(data.keys())))
+    #     break

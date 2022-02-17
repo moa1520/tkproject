@@ -259,7 +259,7 @@ class MultiSegmentLoss(nn.Module):
         conf_p = F.softmax(conf_p, dim=1)
         loss_c = self.focal_loss(conf_p, targets_conf)
 
-        trans_conf_p = trans_logits.view(-1, num_classes)
+        trans_conf_p = trans_logits.reshape(-1, num_classes)
         trans_conf_p = F.softmax(trans_conf_p, dim=1)
         loss_trans_c = self.focal_loss(trans_conf_p, trans_conf_t)
 

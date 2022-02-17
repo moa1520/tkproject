@@ -1,4 +1,3 @@
-datasets/thumos14/*
 .vscode
 networks/transformer(TDA)
 checkpoints/*
@@ -7,3 +6,7 @@ models/thumos14_flow/*
 models/best/*
 models/thumos14(not_Unet)/*
 models/*
+I3D_features_thumos14
+output/*
+datasets/*
+cuhk-val

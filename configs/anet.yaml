@@ -2,7 +2,7 @@ dataset:
   num_classes: 201
   training:
     video_mp4_path: datasets/activitynet/train_val_npy_112
-    video_info_path: anet_annotations/video_info_train_val.json
+    video_info_path: datasets/anet_annotations/video_info_train_val.json
     video_anno_path: None
     video_data_path: None
     clip_length: 768
@@ -10,7 +10,7 @@ dataset:
     crop_size: 96
   testing:
     video_mp4_path: datasets/activitynet/train_val_npy_112
-    video_info_path: anet_annotations/video_info_train_val.json
+    video_info_path: datasets/anet_annotations/video_info_train_val.json
     video_anno_path: None
     video_data_path: None
     crop_size: 96
@@ -27,16 +27,19 @@ training:
   batch_size: 1
   learning_rate: 1e-4
   weight_decay: 1e-4
-  max_epoch: 16
+  max_epoch: 25
   focal_loss: true
   checkpoint_path: models/anet/
-  random_seed: 2020
+  random_seed: 2023
+  hidden_dim: 512
+  num_queries: 189
+  num_heads: 8
 
 testing:
   conf_thresh: 0.01
   top_k: 5000
   nms_thresh: 0.5
   nms_sigma: 0.85
-  checkpoint_path: models/anet/checkpoint-10.ckpt
+  checkpoint_path: models/anet/checkpoint_10.pth
   output_path: output/
-  output_json: detection_results.json
+  output_json: detection_results_anet_10.json

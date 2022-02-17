@@ -38,7 +38,8 @@ def get_video_info(video_info_path):
 def get_video_anno(video_infos,
                    video_anno_path):
     df_anno = pd.DataFrame(pd.read_csv(video_anno_path)).values[:]
-    originidx_to_idx, idx_to_class = get_class_index_map()
+    originidx_to_idx, idx_to_class = get_class_index_map(
+        config['dataset']['training']['class_index_map'])
     video_annos = {}
     for anno in df_anno:
         video_name = anno[0]
@@ -277,7 +278,7 @@ class THUMOS_Dataset(Dataset):
         if self.rgb_norm:
             input_data = (input_data / 255.0) * 2.0 - 1.0
         ssl_input_data, ssl_annos, flag = self.augment(
-            input_data, annos, th, 1) # th: mininum annotation length
+            input_data, annos, th, 1)  # th: mininum annotation length
         annos = annos_transform(annos, self.clip_length)
         target = np.stack(annos, 0)
         ssl_target = np.stack(ssl_annos, 0)

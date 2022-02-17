@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from common.configs import config
 from common.misc import nested_tensor_from_tensor_list
 from i3d_backbone import InceptionI3d
@@ -9,7 +10,7 @@ from i3d_backbone import InceptionI3d
 from networks.boundary_pooling import BoundaryMaxPooling
 from networks.feature_pyramid import FPN, CoarseNetwork, _Unit1D
 from networks.position_encoding import PositionEmbeddingLearned
-from networks.transformer_unet import Graph_Transformer
+from networks.transformer_unet import Transformer
 
 num_classes = config['dataset']['num_classes']
 freeze_bn = config['model']['freeze_bn']
@@ -136,6 +137,66 @@ class Mixup_Branch(nn.Module):
         return mixed_feature, feature
 
 
+class MMS(nn.Module):
+    def __init__(self, in_channels, proposal_channels):
+        super(MMS, self).__init__()
+        self.inverse_cdf_sampling = Inverse_CDF_Sampling()
+        self.lr_conv = nn.Sequential(
+            _Unit1D(in_channels=in_channels,
+                    output_channels=proposal_channels * 2,
+                    kernel_shape=1,
+                    activation_fn=None),
+            nn.GroupNorm(32, proposal_channels * 2),
+            nn.ReLU(inplace=True)
+        )
+        self.proposal_conv = nn.Sequential(
+            _Unit1D(in_channels=proposal_channels * 4,
+                    output_channels=in_channels,
+                    kernel_shape=1,
+                    activation_fn=None),
+            nn.GroupNorm(32, in_channels),
+            nn.ReLU(inplace=True)
+        )
+        self.sample_conv = nn.Sequential(
+            _Unit1D(in_channels=proposal_channels,
+                    output_channels=proposal_channels,
+                    kernel_shape=1,
+                    activation_fn=None),
+            nn.GroupNorm(32, proposal_channels),
+            nn.ReLU(inplace=True)
+        )
+        self.cur_conv = nn.Sequential(
+            _Unit1D(
+                in_channels=proposal_channels,
+                output_channels=proposal_channels,
+                kernel_shape=1,
+                activation_fn=None
+            ),
+            nn.GroupNorm(32, proposal_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, feature, frame_level_feature):
+        '''
+        feature: (1, 512, t); t = 126
+        frame_level_feature: (1, 512, 256)
+        segments: (1, 126, 4)
+        '''
+        cur_feature = self.cur_conv(feature)  # 1 x 512 x 126
+        lr_feature = self.lr_conv(feature)  # 1 x 1024 x 126
+
+        t = [64, 32, 16, 8, 4, 2]
+        # Conv(1 x 512 x [64, 32, 16, 8, 4, 2]) -> 1 x 512 x [64, 32, 16, 8, 4, 2]
+        sampled_features = [self.sample_conv(
+            self.inverse_cdf_sampling(frame_level_feature, t_size=x)) for x in t]
+        sampled_feature = torch.cat(sampled_features, dim=2)
+        mixed_feature = torch.cat(
+            [sampled_feature, lr_feature, cur_feature], dim=1)  # 1 x 204   8 x 126
+        mixed_feature = self.proposal_conv(mixed_feature)
+
+        return mixed_feature, lr_feature
+
+
 class PTN(nn.Module):
     def __init__(self, num_classes, num_queries=126, hidden_dim=256, in_channels=3, training=True):
         super(PTN, self).__init__()
@@ -148,9 +209,8 @@ class PTN(nn.Module):
         self.poisition_embedding = PositionEmbeddingLearned(
             num_pos_dict=512, num_pos_feats=hidden_dim)
         self.num_heads = config['training']['num_heads']
-        self.inverse_cdf_sampling = Inverse_CDF_Sampling()
 
-        self.transformer = Graph_Transformer(
+        self.boundary_transformer = Transformer(
             nqueries=num_queries,
             d_model=hidden_dim,
             nhead=self.num_heads,
@@ -158,18 +218,35 @@ class PTN(nn.Module):
             num_decoder_layers=1,
             dim_feedforward=1024,
             dropout=0,
-            activation='leaky_relu',
+            # activation='leaky_relu',
+            activation='relu',
             normalize_before=True,
             return_intermediate_dec=True)
-        self.loc_mixup_branch = Mixup_Branch(512, 512)
-        self.conf_mixup_branch = Mixup_Branch(512, 512)
+
+        self.class_transformer = Transformer(
+            nqueries=num_queries,
+            d_model=hidden_dim,
+            nhead=self.num_heads,
+            num_encoder_layers=1,
+            num_decoder_layers=1,
+            dim_feedforward=1024,
+            dropout=0,
+            # activation='leaky_relu',
+            activation='relu',
+            normalize_before=True,
+            return_intermediate_dec=True)
+        # self.loc_mixup_branch = Mixup_Branch(512, 512)
+        # self.conf_mixup_branch = Mixup_Branch(512, 512)
+
+        self.MMS_loc = MMS(in_channels=512, proposal_channels=512)
+        self.MMS_conf = MMS(in_channels=512, proposal_channels=512)
 
         # self.input_proj = nn.Conv1d(512, hidden_dim, kernel_size=1)
         # self.class_embed = nn.Linear(hidden_dim, num_classes)
         # self.segments_embed = MLP(hidden_dim, hidden_dim, 2, 3)
 
-        # self.loc_query_embed = nn.Embedding(num_queries, hidden_dim)
-        # self.conf_query_embed = nn.Embedding(num_queries, hidden_dim)
+        self.loc_query_embed = nn.Embedding(num_queries, hidden_dim)
+        self.conf_query_embed = nn.Embedding(num_queries, hidden_dim)
         if self._training:
             self.backbone.load_pretrained_weight()
 
@@ -205,43 +282,45 @@ class PTN(nn.Module):
             loc, conf, priors, loc_feat, conf_feat, frame_level_feat = self.feature_pyramid_net(
                 feat, ssl)
 
-            t = loc.size(1)
-            with torch.no_grad():
-                segments = loc / \
-                    config['dataset']['training']['clip_length'] * t
-                new_priors = torch.round(priors * t - 0.5)
-                plen = segments[:, :, :1] + segments[:, :, 1:]
-                plen = torch.clamp(plen / 5.0, min=1.0)
-                l_segment = new_priors - segments[:, :, :1]
-                r_segment = new_priors + segments[:, :, 1:]
-                segments = torch.cat([
-                    torch.round(l_segment - plen),
-                    torch.round(l_segment + plen),
-                    torch.round(r_segment - plen),
-                    torch.round(r_segment + plen)
-                ], dim=-1)
+            # t = loc.size(1)
+            # with torch.no_grad():
+            #     segments = loc / \
+            #         config['dataset']['training']['clip_length'] * t
+            #     new_priors = torch.round(priors * t - 0.5)
+            #     plen = segments[:, :, :1] + segments[:, :, 1:]
+            #     plen = torch.clamp(plen / 5.0, min=1.0)
+            #     l_segment = new_priors - segments[:, :, :1]
+            #     r_segment = new_priors + segments[:, :, 1:]
+            #     segments = torch.cat([
+            #         torch.round(l_segment - plen),
+            #         torch.round(l_segment + plen),
+            #         torch.round(r_segment - plen),
+            #         torch.round(r_segment + plen)
+            #     ], dim=-1)
 
-            loc_trans_feat, loc_trans_feat_ = self.loc_mixup_branch(
-                loc_feat.permute(0, 2, 1), frame_level_feat, segments)
-            conf_trans_feat, conf_trans_feat_ = self.conf_mixup_branch(
-                conf_feat.permute(0, 2, 1), frame_level_feat, segments)
+            _, loc_trans_feat_ = self.MMS_loc(
+                loc_feat.permute(0, 2, 1), frame_level_feat)
+            _, conf_trans_feat_ = self.MMS_conf(
+                conf_feat.permute(0, 2, 1), frame_level_feat)
             trip.append(frame_level_feat.clone())
             trip.extend([loc_trans_feat_.clone(), conf_trans_feat_.clone()])
 
             decoded_segments = proposals[0].unsqueeze(0)
             plen = decoded_segments[:, :, 1:] - \
                 decoded_segments[:, :, :1] + 1.0
-            plen = torch.clamp(plen / 5.0, min=1.0)
+            in_plen = torch.clamp(plen / 4.0, min=1.0)
+            out_plen = torch.clamp(plen / 10.0, min=1.0)
             frame_segments = torch.cat([
-                torch.round(decoded_segments[:, :, :1] - plen),
-                torch.round(decoded_segments[:, :, :1] + plen),
-                torch.round(decoded_segments[:, :, 1:] - plen),
-                torch.round(decoded_segments[:, :, 1:] + plen),
+                torch.round(decoded_segments[:, :, :1] - out_plen),
+                torch.round(decoded_segments[:, :, :1] + in_plen),
+                torch.round(decoded_segments[:, :, 1:] - in_plen),
+                torch.round(decoded_segments[:, :, 1:] + out_plen)
             ], dim=-1)
             anchor, positive, negative = [], [], []
+            max_lens = [256, 126, 126]
             for i in range(3):
                 bound_feat = self.boundary_max_pooling(
-                    trip[i], frame_segments / self.scales[i])
+                    trip[i], frame_segments / self.scales[i], max_lens[i])
                 # for triplet loss
                 ndim = bound_feat.size(1) // 2
                 anchor.append(bound_feat[:, ndim:, 0])
@@ -254,27 +333,13 @@ class PTN(nn.Module):
             loc, conf, priors, start, end, loc_feat, conf_feat, frame_level_feat = self.feature_pyramid_net(
                 feat)
 
-            t = loc.size(2)
-            with torch.no_grad():
-                segments = loc / \
-                    config['dataset']['training']['clip_length'] * t
-                new_priors = torch.round(priors * t - 0.5)
-                plen = segments[:, :, :1] + segments[:, :, 1:]
-                plen = torch.clamp(plen / 5.0, min=1.0)
-                l_segment = new_priors - segments[:, :, :1]
-                r_segment = new_priors + segments[:, :, 1:]
-                segments = torch.cat([
-                    torch.round(l_segment - plen),
-                    torch.round(l_segment + plen),
-                    torch.round(r_segment - plen),
-                    torch.round(r_segment + plen)
-                ], dim=-1)
+            t = loc.size(1)
 
             # loc_feat, conf_feat -> B x T x C
-            loc_trans_feat, loc_trans_feat_ = self.loc_mixup_branch(
-                loc_feat.permute(0, 2, 1), frame_level_feat, segments)
-            conf_trans_feat, conf_trans_feat_ = self.conf_mixup_branch(
-                conf_feat.permute(0, 2, 1), frame_level_feat, segments)
+            loc_trans_feat, loc_trans_feat_ = self.MMS_loc(
+                loc_feat.permute(0, 2, 1), frame_level_feat)
+            conf_trans_feat, conf_trans_feat_ = self.MMS_conf(
+                conf_feat.permute(0, 2, 1), frame_level_feat)
 
             center = self.center_head(loc_trans_feat).permute(0, 2, 1)
 
@@ -299,9 +364,9 @@ class PTN(nn.Module):
             src, mask = loc_trans_input.tensors, loc_trans_input.mask
             # src = self.input_proj(src)
 
-            # query_embeds = self.loc_query_embed.weight
-            query_embeds = loc_trans_feat.squeeze(0).permute(1, 0)
-            hs = self.transformer(src, (mask == 1), query_embeds, pos)
+            query_embeds = self.loc_query_embed.weight.unsqueeze(1)
+            # query_embeds = query_embeds + loc_trans_feat.permute(2, 0, 1)
+            hs = self.boundary_transformer(src, (mask == 1), query_embeds, pos)
 
             # hs = hs.squeeze(0)
             # outputs_segments = F.relu(self.segments_embed(hs))
@@ -313,9 +378,9 @@ class PTN(nn.Module):
             src, mask = conf_trans_input.tensors, conf_trans_input.mask
             # src = self.input_proj(src)
 
-            # query_embeds = self.conf_query_embed.weight
-            query_embeds = conf_trans_feat.squeeze(0).permute(1, 0)
-            hs = self.transformer(src, (mask == 1), query_embeds, pos)
+            query_embeds = self.conf_query_embed.weight.unsqueeze(1)
+            # query_embeds = query_embeds + conf_trans_feat.permute(2, 0, 1)
+            hs = self.class_transformer(src, (mask == 1), query_embeds, pos)
 
             # hs = hs.squeeze(0)
             # outputs_class = self.class_embed(hs)
